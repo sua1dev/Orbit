@@ -2,6 +2,7 @@
 const internalRoutes=[
  ['password-manager/passwords','비밀번호 관리자','key','passwords',()=>openPasswords()],
  ['settings','설정','settings','settings',()=>openSettings()],
+ ['appearance','꾸미기','sparkles','appearance',()=>openAppearance()],
  ['history','검색·방문 기록','clock','history',()=>openHistory()],
  ['downloads','다운로드','download','downloads',()=>openDownloads()],
  ['extensions','확장 프로그램','extension','extensions',()=>openExtensions()],

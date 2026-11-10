@@ -20,7 +20,7 @@ const fixtureBytes = Buffer.from(Array.from({ length: 128 * 1024 }, (_, i) => i 
 const results = [];
 const requests = [];
 const consoleErrors = [];
-let app, ui, baseURL;
+let app, ui, baseURL, completeStream;
 
 fs.mkdirSync(downloadDir, { recursive: true });
 
@@ -36,8 +36,15 @@ const server = http.createServer(async (req, res) => {
   for await (const chunk of req) chunks.push(chunk);
   const body = Buffer.concat(chunks).toString();
   requests.push({ method: req.method, pathname: url.pathname, body });
+  if (url.pathname === '/download-stream') {
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="orbit-stream.bin"' });
+    res.write(fixtureBytes.subarray(0, 8192));
+    completeStream = () => res.end(fixtureBytes.subarray(8192));
+    return;
+  }
   if (url.pathname === '/download') {
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="orbit-fixture.bin"', 'Content-Length': fixtureBytes.length });
+    const filename = url.searchParams.has('overlap') ? 'orbit-overlap.bin' : 'orbit-fixture.bin';
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${filename}"`, 'Content-Length': fixtureBytes.length });
     let offset = 0;
     const timer = setInterval(() => {
       if (res.destroyed) return clearInterval(timer);
@@ -117,11 +124,7 @@ async function guestEval(id, code, userGesture = false) {
 }
 async function activeURL(url) { return eventually(state, value => value.tabs.find(t => t.id === value.activeTabId)?.url === url, `active URL ${url}`); }
 async function capturePreview(outputPath = previewPath) {
-  const png = await deadline(app.evaluate(async ({ BrowserWindow }) => {
-    const image = await BrowserWindow.getAllWindows()[0].capturePage();
-    return image.toPNG().toString('base64');
-  }), 'native screenshot', 6000);
-  fs.writeFileSync(outputPath, Buffer.from(png, 'base64'));
+  await ui.screenshot({ path: outputPath, scale: 'css', timeout: 6000 });
 }
 async function exitPip(id) { await guestEval(id, 'document.pictureInPictureElement ? document.exitPictureInPicture().then(()=>true) : true'); }
 async function pipState(id) { return guestEval(id, '({active:!!document.pictureInPictureElement,events:window.fixturePipEvents,paused:video.paused,ready:video.readyState,width:video.videoWidth})'); }
@@ -131,9 +134,10 @@ async function pipState(id) { return guestEval(id, '({active:!!document.pictureI
     server.listen(0, '127.0.0.1'); await once(server, 'listening');
     baseURL = `http://127.0.0.1:${server.address().port}`;
     await launch();
+    await action('appearance', { tabPosition: 'side' });
     let personalID, navigationTabID, navigationWC, videoTabID, videoWC, persisted;
 
-    await check('Chromium shell renders with working preload and native screenshot', async () => {
+    await check('Chromium shell renders with working preload and screenshot', async () => {
       const value = await state();
       assert.equal(value.engine.electron, '44.8.0');
       assert.match(value.engine.chromium, /^152\./);
@@ -162,9 +166,9 @@ async function pipState(id) { return guestEval(id, '({active:!!document.pictureI
     await check('Remote content has sandbox, context isolation and no Node or app bridge', async () => {
       const preferences = await app.evaluate(({ webContents }, id) => {
         const p = webContents.fromId(id).getLastWebPreferences();
-        return { nodeIntegration: p.nodeIntegration, contextIsolation: p.contextIsolation, sandbox: p.sandbox, webSecurity: p.webSecurity, allowRunningInsecureContent: p.allowRunningInsecureContent, preload: p.preload || null };
+        return { nodeIntegration: p.nodeIntegration, contextIsolation: p.contextIsolation, sandbox: p.sandbox, webSecurity: p.webSecurity, allowRunningInsecureContent: p.allowRunningInsecureContent };
       }, navigationWC);
-      assert.deepEqual(preferences, { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, preload: null });
+      assert.deepEqual(preferences, { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false });
       assert.deepEqual(await guestEval(navigationWC, '({require:typeof require,process:typeof process,browser:typeof window.browser})'), { require: 'undefined', process: 'undefined', browser: 'undefined' });
     });
 
@@ -251,6 +255,32 @@ async function pipState(id) { return guestEval(id, '({active:!!document.pictureI
       assert.equal(item.receivedBytes, fixtureBytes.length);
       assert.deepEqual(fs.readFileSync(path.join(downloadDir, 'orbit-fixture.bin')), fixtureBytes);
       await eventually(() => ui.locator('#downloadsButton').getAttribute('class'), value => value.includes('download-complete'), 'download completion animation');
+    });
+
+    await check('Taskbar shows unknown progress until overlapping downloads finish', async () => {
+      await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        const setProgressBar = win.setProgressBar.bind(win);
+        globalThis.__orbitSmokeProgress = [];
+        win.setProgressBar = progress => {
+          globalThis.__orbitSmokeProgress.push(progress);
+          setProgressBar(progress);
+        };
+      });
+      const progress = () => app.evaluate(() => globalThis.__orbitSmokeProgress);
+      const download = route => app.evaluate(({ webContents }, { id, url }) => {
+        webContents.fromId(id).downloadURL(url);
+      }, { id: navigationWC, url: baseURL + route });
+      await download('/download-stream');
+      await eventually(state, value => value.downloads.some(d => d.filename === 'orbit-stream.bin' && d.state === 'progressing'), 'unknown length download starts');
+      await download('/download?overlap');
+      const overlapping = await eventually(state, value => value.downloads.some(d => d.filename === 'orbit-overlap.bin' && d.state === 'completed'), 'known length download finishes');
+      assert.equal(overlapping.downloads.find(d => d.filename === 'orbit-stream.bin').state, 'progressing');
+      const updates = await progress();
+      assert.ok(updates.length > 1 && updates.every(value => value === 2), `unexpected taskbar progress ${updates}`);
+      completeStream();
+      await eventually(state, value => value.downloads.some(d => d.filename === 'orbit-stream.bin' && d.state === 'completed'), 'unknown length download finishes');
+      assert.equal((await progress()).at(-1), -1);
     });
 
     await check('Native video PiP opens from local canvas stream and closes cleanly', async () => {

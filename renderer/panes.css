@@ -1,0 +1,167 @@
+.main-shell { display: flex; flex-direction: column; min-height: 0; }
+.main-shell > .toolbar { flex-shrink: 0; }
+.work-area {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  padding: 0 8px 8px 0;
+  overflow: hidden;
+}
+.tool-dock {
+  flex: 0 0 44px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 0 4px;
+  border-inline-end: 1px solid var(--line);
+  overflow: auto;
+  scrollbar-width: none;
+}
+.dock-button {
+  flex: 0 0 33px;
+  width: 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  color: var(--muted);
+}
+.dock-button:hover, .dock-button[aria-expanded="true"] { color: var(--ink); background: var(--hover); }
+.dock-button[aria-expanded="true"] { color: var(--accent); background: var(--soft-accent); }
+.dock-divider { width: 19px; border-top: 1px solid var(--line); margin: 3px 0; }
+.dock-settings { margin-top: auto; }
+.workbench {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+.work-area .workspace-surface {
+  position: relative;
+  inset: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  gap: 8px;
+}
+.workspace-surface > .pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.workspace-surface.is-split > .pane:first-child {
+  flex: 0 0 calc(var(--split-ratio, 50%) - 4px);
+}
+.pane-content {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.pane-content > .external-placeholder { height: 100%; }
+.pane-header, .web-panel-header, .web-panel-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 32px;
+  padding: 2px 4px;
+  color: var(--muted);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.is-active .pane-header { background: var(--soft-accent); color: var(--ink); }
+.pane-title, .panel-address {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 5px;
+  text-align: left;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.pane-title:hover, .panel-address:hover, .pane-action:hover { background: var(--hover); }
+.pane-title-icon { display: grid; place-items: center; flex-shrink: 0; }
+.pane-title-icon .tab-favicon { width: 17px; height: 17px; }
+.pane-title-icon .tab-favicon img { width: 15px; height: 15px; }
+.pane-title-label, #panelHost, .panel-address {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.panel-address { display: block; font-weight: 600; color: var(--ink); }
+.pane-action {
+  flex: 0 0 25px;
+  width: 25px;
+  height: 25px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+.pane-action svg { width: 14px; height: 14px; }
+.split-divider {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: var(--split-ratio, 50%);
+  width: 8px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  touch-action: none;
+  display: grid;
+  place-items: center;
+}
+.split-divider::after {
+  content: "";
+  width: 2px;
+  height: 30px;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: .6;
+}
+.split-divider:hover::after, .split-divider:focus-visible::after, .split-dragging .split-divider::after {
+  opacity: 1;
+  background: var(--accent);
+}
+.split-dragging { user-select: none; }
+.web-panel {
+  flex: 0 0 clamp(210px, 24vw, 345px);
+  max-width: 37%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line);
+  background: var(--paper);
+}
+.web-panel-nav { min-height: 28px; }
+#panelHost { min-width: 0; padding: 0 5px; font-size: 11px; }
+.web-panel-message { margin: 16px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.pane-choices { display: grid; gap: 3px; margin-block: 8px; }
+.pane-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  border-radius: 7px;
+  padding: 4px 9px;
+  text-align: left;
+}
+.pane-choice:hover { background: var(--hover); }
+.pane-choice > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.pane-choice .tab-favicon { flex-shrink: 0; }
+.panel-picker-form { display: flex; gap: 8px; }
+.panel-picker-form .text-input { flex: 1; min-width: 0; }

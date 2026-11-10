@@ -1,7 +1,7 @@
 {
   "name": "orbit-browser",
   "productName": "Orbit",
-  "version": "0.3.0-beta.9",
+  "version": "1.4.5",
   "description": "A Chromium-powered browser with spaces, vertical tabs and automatic picture in picture.",
   "main": "main.cjs",
   "private": true,
@@ -9,7 +9,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "node scripts/start.cjs",
-    "test": "node --test tests/model.test.cjs tests/bookmarks.test.cjs tests/extension-path.test.cjs tests/discord-rpc.test.cjs tests/passwords.test.cjs tests/orbit-spaces.test.cjs tests/history.test.cjs tests/internal-pages.test.cjs tests/youtube-popup.test.cjs",
+    "test": "node --test tests/model.test.cjs tests/bookmarks.test.cjs tests/extension-path.test.cjs tests/discord-rpc.test.cjs tests/passwords.test.cjs tests/orbit-spaces.test.cjs tests/history.test.cjs tests/internal-pages.test.cjs tests/youtube-popup.test.cjs tests/seoul-weather.test.cjs",
     "test:features": "node tests/features.cjs",
     "test:smoke": "node tests/smoke.cjs",
     "test:motion": "node tests/motion.cjs",
@@ -24,7 +24,12 @@
     "test:history": "node tests/history.cjs",
     "test:internal": "node tests/internal-pages.cjs",
     "test:click": "node tests/youtube-click.cjs",
-    "test:site-buttons": "node tests/site-buttons.cjs"
+    "test:site-buttons": "node tests/site-buttons.cjs",
+    "test:start-page": "node tests/start-page.cjs",
+    "test:work-area": "node tests/work-area.cjs",
+    "test:login-restart": "node tests/login-restart.cjs",
+    "test:local-documents": "node tests/local-documents.cjs",
+    "test:context-menu": "node tests/web-context-menu.cjs && node tests/chrome-context-menu.cjs"
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

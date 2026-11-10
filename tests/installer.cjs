@@ -10,6 +10,7 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
+const { fileTypes } = require('../lib/local-document.cjs');
 
 const projectDir = path.resolve(__dirname, '..');
 const workspace = path.resolve(projectDir, '..', '..');
@@ -70,11 +71,21 @@ async function powershell(code) {
 }
 async function registrySnapshot() {
   // Hash values are compared in memory only, never printed or written to evidence.
+  const extensions = [...fileTypes.keys()].map(psQuote).join(',');
   return powershell(`
     function Read-Value([string]$subkey,[string]$name){$key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subkey);if($null -eq $key){return $null};try{return $key.GetValue($name,$null)}finally{$key.Dispose()}}
     function Has-Key([string]$subkey){$key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subkey);if($null -eq $key){return $false};$key.Dispose();return $true}
     function Read-Choice([string]$scheme){$subkey='Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\'+$scheme+'\\UserChoice';return @{exists=(Has-Key $subkey);progId=(Read-Value $subkey 'ProgId');hash=(Read-Value $subkey 'Hash')}}
+    $documents=@{};
+    foreach ($extension in @(${extensions})) {
+      $progId='OrbitDocument.' + $extension.Substring(1);
+      $documents[$extension]=@{
+        association=(Read-Value 'Software\\Clients\\StartMenuInternet\\Orbit\\Capabilities\\FileAssociations' $extension);
+        command=(Read-Value ('Software\\Classes\\' + $progId + '\\shell\\open\\command') '')
+      };
+    }
     @{
+      documents=$documents;
       own=@{registered=(Read-Value 'Software\\RegisteredApplications' 'Orbit');classExists=(Has-Key 'Software\\Classes\\OrbitBrowserURL');classCommand=(Read-Value 'Software\\Classes\\OrbitBrowserURL\\shell\\open\\command' '');clientExists=(Has-Key 'Software\\Clients\\StartMenuInternet\\Orbit');clientCommand=(Read-Value 'Software\\Clients\\StartMenuInternet\\Orbit\\shell\\open\\command' '');http=(Read-Value 'Software\\Clients\\StartMenuInternet\\Orbit\\Capabilities\\URLAssociations' 'http');https=(Read-Value 'Software\\Clients\\StartMenuInternet\\Orbit\\Capabilities\\URLAssociations' 'https')};
       userChoice=@{http=(Read-Choice 'http');https=(Read-Choice 'https')}
     }|ConvertTo-Json -Depth 6 -Compress`);
@@ -132,7 +143,7 @@ function startInstalled(args = []) {
   return child;
 }
 async function runExecutable(executable, args, label, timeout = 180000) {
-  const child = spawn(executable, args, { env: environment(), shell: false, windowsHide: true, windowsVerbatimArguments: true, stdio: 'ignore' });
+  const child = spawn(executable, args, { env: environment(), shell: false, windowsHide: true, stdio: 'ignore' });
   const [exitCode] = await deadline(once(child, 'exit'), label, timeout);
   assert.equal(exitCode, 0, `${label} failed`);
 }
@@ -162,9 +173,9 @@ async function uninstallOwnInstallation() {
   assert.equal(own.classCommand, `"${installedExe}" "%1"`, 'Installer registration ownership changed; stop cleanup');
   const shortcut = await desktopShortcutSnapshot();
   if (shortcut.exists) assertOwnedDesktopShortcut(shortcut);
-  const matches = fs.readdirSync(installDir).filter(name => /^Uninstall.*\.exe$/i.test(name));
+  const matches = fs.readdirSync(installDir).filter(name => /^unins\d+\.exe$/i.test(name));
   assert.equal(matches.length, 1, 'Expected one application uninstaller');
-  await runExecutable(path.join(installDir, matches[0]), ['/S'], 'silent uninstaller');
+  await runExecutable(path.join(installDir, matches[0]), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'], 'silent uninstaller');
   await eventually(() => fs.existsSync(installedExe), exists => !exists, 'installed executable removal', 30000);
   uninstalled = true;
 }
@@ -173,12 +184,13 @@ async function uninstallOwnInstallation() {
   try {
     await check('Preflight preserves existing installations, processes and Windows default choices', async () => {
       assert.equal(process.platform, 'win32', 'This installer lifecycle test requires Windows');
-      assert.ok(fs.existsSync(installer), 'Build the versioned NSIS installer before running this test');
+      assert.ok(fs.existsSync(installer), 'Build the versioned Inno Setup installer before running this test');
       assert.ok(!fs.existsSync(installDir), 'The disposable installation directory must be new');
       const running = await orbitProcesses();
       assert.equal(running.length, 0, 'Orbit is already running. Close it yourself before this test; no process was stopped');
       baselineRegistry = await registrySnapshot();
       assert.ok(baselineRegistry.own.registered === null && !baselineRegistry.own.classExists && !baselineRegistry.own.clientExists, 'An existing Orbit browser registration was found. Test aborted before install to avoid overwriting it');
+      assert.ok(Object.values(baselineRegistry.documents).every(entry => entry.association === null && entry.command === null), 'Existing Orbit document registration found. Test aborted before install.');
       const desktop = await powershell(`[Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)|ConvertTo-Json -Compress`);
       assert.ok(typeof desktop === 'string' && path.isAbsolute(desktop), 'Windows did not provide an absolute current-user desktop directory');
       desktopShortcut = path.join(desktop, 'Orbit.lnk');
@@ -208,13 +220,11 @@ async function uninstallOwnInstallation() {
       });
     } else evidence.legacyMigration = 'No previous portable executable was available; fresh-profile lifecycle only.';
 
-    await check('Silent NSIS installation registers this exact application without changing defaults', async () => {
+    await check('Silent Inno Setup installation registers this exact application without changing defaults', async () => {
       phase = 'install';
       assertInsideWorkspace(installDir);
       assert.equal((await desktopShortcutSnapshot()).exists, false, 'A desktop shortcut appeared after preflight; stop before installing');
-      // NSIS /D must remain the final argument and must not be quoted, even when
-      // the path contains spaces. No shell interprets these raw argument values.
-      await runExecutable(installer, ['/S', `/D=${installDir}`], 'silent installer');
+      await runExecutable(installer, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', `/DIR=${installDir}`, '/TASKS=desktopicon'], 'silent installer');
       installed = true;
       await eventually(() => fs.existsSync(installedExe), Boolean, 'installed executable');
       assert.ok(fs.existsSync(path.join(installDir, 'resources', 'app.asar')));
@@ -223,6 +233,10 @@ async function uninstallOwnInstallation() {
       assert.equal(snapshot.own.classCommand, `"${installedExe}" "%1"`);
       assert.equal(snapshot.own.clientCommand, `"${installedExe}"`);
       assert.equal(snapshot.own.http, 'OrbitBrowserURL'); assert.equal(snapshot.own.https, 'OrbitBrowserURL');
+      for (const extension of fileTypes.keys()) {
+        assert.equal(snapshot.documents[extension].association, 'OrbitDocument.' + extension.slice(1));
+        assert.equal(snapshot.documents[extension].command, `"${installedExe}" --open-file "%1"`);
+      }
       assertDefaultUnchanged(snapshot); evidence.defaultsUnchangedAfterInstall = true;
     });
 
@@ -285,6 +299,7 @@ async function uninstallOwnInstallation() {
       await uninstallOwnInstallation();
       const snapshot = await registrySnapshot();
       assert.ok(snapshot.own.registered === null && !snapshot.own.classExists && !snapshot.own.clientExists, 'The uninstall left installer-owned browser registration behind');
+      assert.ok(Object.values(snapshot.documents).every(entry => entry.association === null && entry.command === null), 'Uninstall left an Orbit document association');
       assert.equal((await desktopShortcutSnapshot()).exists, false, 'The uninstaller left its owned desktop shortcut behind');
       assertDefaultUnchanged(snapshot);
       assert.equal(fs.readFileSync(stateFile, 'utf8'), profileBefore, 'The uninstaller changed the private test profile');
@@ -296,7 +311,7 @@ async function uninstallOwnInstallation() {
     await check('The no-desktop-shortcut option skips the shortcut through installation and removal', async () => {
       phase = 'install-without-desktop-shortcut';
       assert.equal((await desktopShortcutSnapshot()).exists, false, 'A desktop shortcut appeared before opt-out installation; leave it untouched');
-      await runExecutable(installer, ['/S', '--no-desktop-shortcut', `/D=${installDir}`], 'silent installer without desktop shortcut');
+      await runExecutable(installer, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', `/DIR=${installDir}`, '/MERGETASKS=!desktopicon'], 'silent installer without desktop shortcut');
       installed = true; uninstalled = false;
       await eventually(() => fs.existsSync(installedExe), Boolean, 'opt-out installed executable');
       assert.equal((await desktopShortcutSnapshot()).exists, false, 'The opt-out installation created a desktop shortcut');

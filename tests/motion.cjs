@@ -98,18 +98,19 @@ async function openPalette() {
     ui.on('pageerror', error => errors.push(error.message));
     await ui.waitForFunction(() => window.browser && document.querySelector('.home-title'));
     homeTabId = (await state()).activeTabId;
+    await action('appearance', { tabPosition: 'side' });
     await ui.emulateMedia({ reducedMotion: 'no-preference' });
     await action('motionPreference', { reduced: false });
 
     await check('Unrelated state snapshots keep home content and focused controls mounted', async () => {
       await ui.evaluate(() => {
         window.__motionHome = document.querySelector('.home-page');
-        window.__motionSearch = document.querySelector('.home-search');
+        window.__motionSearch = document.querySelector('.start-search');
         window.__motionSearch.focus();
       });
       const value = await state();
       for (let i = 0; i < 3; i++) await action('theme', { color: value.themeColor });
-      assert.deepEqual(await ui.evaluate(() => ({ sameHome: window.__motionHome === document.querySelector('.home-page'), sameSearch: window.__motionSearch === document.querySelector('.home-search'), focused: document.activeElement === window.__motionSearch })), { sameHome: true, sameSearch: true, focused: true });
+      assert.deepEqual(await ui.evaluate(() => ({ sameHome: window.__motionHome === document.querySelector('.home-page'), sameSearch: window.__motionSearch === document.querySelector('.start-search'), focused: document.activeElement === window.__motionSearch })), { sameHome: true, sameSearch: true, focused: true });
       await capture(previewPath, true);
       assert.ok(fs.statSync(previewPath).size > 15000);
     });
@@ -225,10 +226,11 @@ async function openPalette() {
     await check('Reduced motion disables sidebar interpolation and respects media changes', async () => {
       await ui.emulateMedia({ reducedMotion: 'reduce' });
       await eventually(state, value => value.reducedMotion === true, 'reduced-motion preference reaches native layout');
+      const shellX = () => ui.locator('#workspaceSurface .pane-content').evaluate(node => Math.round(node.getBoundingClientRect().left));
       const before = (await nativeViews())[0].bounds;
-      const value = await action('toggleSidebar');
-      const after = (await nativeViews())[0].bounds;
-      const expectedX = value.sidebarCollapsed ? 82 : 266;
+      await action('toggleSidebar');
+      const expectedX = await shellX();
+      const after = (await eventually(nativeViews, visible => visible[0]?.bounds.x === expectedX, 'reduced-motion native bounds'))[0].bounds;
       assert.equal(after.x, expectedX);
       assert.notEqual(after.x, before.x);
       const durations = await ui.evaluate(() => ({ sidebar: getComputedStyle(document.querySelector('.sidebar')).transitionDuration, overlay: getComputedStyle(document.querySelector('#overlay')).animationDuration }));
@@ -236,7 +238,8 @@ async function openPalette() {
       await action('toggleSidebar');
       await ui.emulateMedia({ reducedMotion: 'no-preference' });
       await eventually(state, value => value.reducedMotion === false, 'normal motion preference restored');
-      const expandedX = (await nativeViews())[0].bounds.x;
+      const expandedX = await shellX();
+      await eventually(nativeViews, visible => visible[0]?.bounds.x === expandedX, 'expanded native bounds');
       await action('toggleSidebar');
       const frames = await app.evaluate(async ({ BrowserWindow }) => {
         const positions = [], primary = BrowserWindow.getAllWindows()[0];
@@ -247,8 +250,9 @@ async function openPalette() {
         }
         return positions;
       });
-      assert.ok(frames.some(x => x > 82 && x < expandedX), `expected intermediate native bounds; received ${frames.join(',')}`);
-      await eventually(nativeViews, visible => visible[0]?.bounds.x === 82, 'animated sidebar settles');
+      const collapsedX = await shellX();
+      assert.ok(frames.some(x => x > collapsedX && x < expandedX), `expected intermediate native bounds; received ${frames.join(',')}`);
+      await eventually(nativeViews, visible => visible[0]?.bounds.x === collapsedX, 'animated sidebar settles');
       await action('toggleSidebar');
       await eventually(nativeViews, visible => visible[0]?.bounds.x === expandedX, 'expanded sidebar settles');
     });

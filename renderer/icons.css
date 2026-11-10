@@ -62,6 +62,17 @@ svg {
 .window-controls .window-close svg { width: 18px; height: 18px; }
 .pinned-tab .tab-favicon { width: 24px; height: 24px; }
 .tab-favicon img { object-fit: contain; image-rendering: auto; border-radius: 3px; }
+.site-monogram {
+  display: grid;
+  place-items: center;
+  width: min(100%, 23px);
+  aspect-ratio: 1;
+  border-radius: 5px;
+  background: hsl(var(--site-hue, 215) 38% 34%);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
 .dark-chrome .tab-action { color: #e8e8f2b8; }
 .dark-chrome .tab-action:hover { color: #fff; background: #ffffff14; box-shadow: inset 0 0 0 1px #ffffff08; }
 .dark-chrome .tab-action[aria-label*="닫기"]:hover { color: #ffb1ba; background: #e363781c; }

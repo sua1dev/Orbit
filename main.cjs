@@ -3,10 +3,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { randomUUID, createHash } = require('node:crypto');
-const { normalizeInput, isWebURL, isYoutubeURL, createDefaultState, sanitizeState, publicTab, sanitizeFaviconURL, nextSpaceName } = require('./lib/model.cjs');
+const { normalizeInput, isWebURL, isYoutubeURL, createDefaultState, sanitizeState, publicTab, nextSpaceName } = require('./lib/model.cjs');
+const { sanitizeAppearance, loadWallpaper, readAppearanceProfile } = require('./lib/appearance.cjs');
 const { popupTarget, sameOriginBlob } = require('./lib/popup-policy.cjs');
+const { maxIconBytes, safeRasterFaviconURL, decodeInlineFavicon, svgFavicon, faviconImageScript } = require('./lib/site-icons.cjs');
+const { webContextMenu, editableItems } = require('./lib/web-context-menu.cjs');
 const {addHistory,safeVisit,preferences}=require('./lib/history.cjs');
 const {fetchSuggestions}=require('./lib/search-suggestions.cjs');
+const { createSeoulWeatherService } = require('./lib/seoul-weather.cjs');
+const { fileTypes, launchDocumentPath, openLocalDocument } = require('./lib/local-document.cjs');
+const { chromeMenuItems, item: chromeMenuItem } = require('./lib/chrome-menu.cjs');
 
 const { parseBookmarkHTML, parseChromiumBookmarks } = require('./lib/bookmarks.cjs');
 const { resolveExtensionDirectory } = require('./lib/extension-path.cjs');
@@ -16,6 +22,7 @@ const { collectLoginScript, fillLoginScript } = require('./lib/login-page.cjs');
 const {isInternal}=require('./lib/internal-pages.cjs');
 const HOME = 'orbit://newtab';
 const TEST = process.env.ORBIT_TEST_MODE === '1';
+const getSeoulWeather = createSeoulWeatherService();
 app.setName('Orbit');
 if (process.platform === 'win32') app.setAppUserModelId('com.orbitbrowser.desktop');
 app.setPath('userData', process.env.ORBIT_PROFILE ? path.resolve(process.env.ORBIT_PROFILE) : path.join(app.getPath('appData'), 'Orbit'));
@@ -32,13 +39,41 @@ const rpcExtensionFile = path.join(app.getPath('userData'), 'orbit-rpc-extension
 const passwordVault = new PasswordVault(path.join(app.getPath('userData'), 'orbit-passwords.bin'), safeStorage);
 let rpcBridge;
 let appQuitting = false;
-const externalURLs = process.argv.filter(isWebURL).slice(0, 20);
+let externalLaunches = [process.argv];
 const securePreferences = { nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, allowRunningInsecureContent: false, disableBlinkFeatures: 'FedCm' };
 // Electron has no working FedCM account chooser here. Let identity providers use
 // their standard OAuth popup flow; keep TLS, origin checks and sandboxing intact.
 
 function isRpcExtension(manifest) {
   return manifest?.orbit_rpc_bridge?.version === 1 && manifest.orbit_rpc_bridge.endpoint === 'http://127.0.0.1:39231';
+}
+function readNormalProfile() {
+  try {
+    const file = path.join(app.getPath('userData'), 'orbit-state.json');
+    return sanitizeState(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return createDefaultState();
+  }
+}
+function openDocument(filename) {
+  return openLocalDocument({ BrowserWindow, session }, filename, path.join(__dirname, 'renderer', 'orbit.ico'));
+}
+async function routeExternalLaunch(args, { focus = true } = {}) {
+  const filename = launchDocumentPath(args);
+  const urls = args.filter(isWebURL).slice(0, 20);
+  if (urls.length || (focus && !filename)) {
+    const normal = [...controllers].filter(owner => !owner.incognito && !owner.win?.isDestroyed());
+    let owner = normal.find(candidate => candidate.win?.isFocused()) || normal.find(candidate => candidate.primary) || normal[0];
+    if (!owner && !urls.length) owner = [...controllers].find(candidate => candidate.win && !candidate.win.isDestroyed());
+    if (!owner) owner = createController({ initialState: readNormalProfile(), primary: true });
+    await owner.ready;
+    if (focus && owner.win && !owner.win.isDestroyed()) {
+      if (owner.win.isMinimized()) owner.win.restore();
+      owner.win.show();owner.win.focus();
+    }
+    for (const url of urls) await owner.handleAction('newTab', { url });
+  }
+  if (filename) await openDocument(filename);
 }
 function rpcExtensionRecord(spaceId, directory, manifest) {
   const id = createHash('sha256').update(directory.toLowerCase()).digest('hex').slice(0, 32).replace(/[0-9a-f]/g, value => String.fromCharCode(97 + parseInt(value, 16)));
@@ -109,7 +144,9 @@ let win, state = initialState || createDefaultState();
 let stateFile = incognito ? null : path.join(app.getPath('userData'), primary ? 'orbit-state.json' : path.join('windows', windowId + '.json'));
 let overlayOpen = false, saveTimer, publishTimer, quitting = false;
 let pipPending = false, pipTabId = null, blurTimer;
-let reducedMotion = false, animatedSidebarWidth = null, sidebarAnimation = null;
+let reducedMotion = false;
+let guestLayout = null;
+let webPanel = null;
 const views = new Map();
 const downloadItems = new Map();
 const closeRequests = new Map();
@@ -120,10 +157,10 @@ let notice = null, noticeTimer;
 let findResult = null;
 const findSessions = new Map();
 const faviconRequests = new Map();
-const faviconAborts = new Set();
+const faviconJobs = new Map();
 const extensionWindows = new Set();
 let actionQueue = Promise.resolve();
-const controller = { get win() { return win; }, get incognito() { return incognito; }, get primary() { return primary; }, get state() { return state; }, snapshot, handleAction, publish, receiveDownload, saveNow, closeExtensionPopups, rpcCandidates, loginEvent, suggest, canWriteClipboard };
+const controller = { get win() { return win; }, get incognito() { return incognito; }, get primary() { return primary; }, get state() { return state; }, snapshot, layout, applyGuestLayout, handleAction, publish, receiveDownload, saveNow, closeExtensionPopups, rpcCandidates, loginEvent, suggest, canWriteClipboard, openChromeMenu };
 controllers.add(controller);
 let suggestionRequest;
 async function suggest(query){
@@ -133,9 +170,10 @@ async function suggest(query){
   const result=await fetchSuggestions(query,request.signal);
   return request.signal.aborted||incognito||!state.searchPreferences.autocomplete||!state.searchPreferences.onlineSuggestions?[]:result;
 }
-function remember(kind,value,title,spaceId=state.activeSpaceId){
+function remember(kind,value,title,spaceId=state.activeSpaceId,faviconURL=null){
   if(incognito||!state.searchPreferences.saveHistory||!value)return;
-  state.history=addHistory(state.history,{kind,value,title,spaceId,at:Date.now()},new Set(state.spaces.map(s=>s.id)));syncShared('history');persist();
+  const previous = kind === 'visit' ? state.history.find(entry => entry.kind === kind && entry.spaceId === spaceId && entry.value === value) : null;
+  state.history=addHistory(state.history,{kind,value,title,spaceId,at:Date.now(),faviconURL:faviconURL||previous?.faviconURL},new Set(state.spaces.map(s=>s.id)));syncShared('history');persist();
 }
 let loginPromptOpen = false;
 const loginPromptTimes = new Map();
@@ -183,7 +221,7 @@ function snapshot() {
   const extensions = configureSession(state.activeSpaceId).extensions.getAllExtensions().map(extension => ({ id: extension.id, name: extension.name, version: extension.version }));
   const rpc = !incognito && rpcExtensions.get(state.activeSpaceId);
   if (rpc) extensions.push({ id: rpc.id, name: rpc.name, version: rpc.version, compatibility: rpc.compatibility, connection: rpcBridge?.getStatus() || { connected: false } });
-  return { ...state, history: incognito ? [] : state.history, tabs: state.tabs.map(entry => ({ ...publicTab(entry), muted: views.get(entry.id)?.webContents.isAudioMuted() || false })), incognito, windowCount: controllers.size, findResult, zoomFactor: views.get(state.activeTabId)?.webContents.getZoomFactor() || 1, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
+  return { ...state, history: incognito ? [] : state.history, tabs: state.tabs.map(entry => ({ ...publicTab(entry), muted: views.get(entry.id)?.webContents.isAudioMuted() || false })), webPanel: webPanel?.spaceId === state.activeSpaceId ? { ...webPanel.details } : null, incognito, windowCount: controllers.size, findResult, zoomFactor: views.get(state.activeTabId)?.webContents.getZoomFactor() || 1, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
     isMaximized: win?.isMaximized() || false, reducedMotion, packaged: app.isPackaged, version: app.getVersion(), engine: { electron: process.versions.electron, chromium: process.versions.chrome } };
 }
 function persist() {
@@ -213,59 +251,78 @@ function notify(message) {
   clearTimeout(noticeTimer);
   noticeTimer = setTimeout(() => { notice = null; publish(false); }, 4500);
 }
-function command(name) {
+function command(name, payload) {
   if (!win || win.isDestroyed()) return;
   if (name !== 'find') overlayOpen = true;
   layout();
   win.webContents.focus();
-  win.webContents.send('orbit:command', name);
+  win.webContents.send('orbit:command', name, payload);
+}
+function openChromeMenu(request) {
+  if (!win || win.isDestroyed() || !request || !Number.isInteger(request.x) || !Number.isInteger(request.y)) return;
+  const [width, height] = win.getContentSize();
+  if (request.x < 0 || request.x >= width || request.y < 0 || request.y >= height) return;
+  const items = chromeMenuItems(request, state, {
+    run: (name, payload) => handleAction(name, payload).catch(() => {}),
+    command: (name, payload) => {
+      if (name !== 'folder-editor' || state.folders.some(folder => folder.id === payload.id)) command(name, payload);
+    },
+    contentsFor: id => {
+      const contents = views.get(id)?.webContents;
+      return contents && !contents.isDestroyed() ? contents : null;
+    },
+    copyAddress: url => { clipboard.writeText(url);notify('주소를 복사했습니다.'); },
+    incognito
+  });
+  if (items.length) Menu.buildFromTemplate(items).popup({
+    window: win, x: request.x, y: request.y, sourceType: request.keyboard === true ? 'keyboard' : undefined
+  });
 }
 function visibleIds() { return state.splitTabIds.length === 2 ? state.splitTabIds : [state.activeTabId]; }
-function finishSidebarMotion() {
-  clearInterval(sidebarAnimation);sidebarAnimation = null;animatedSidebarWidth = null;
-}
-function easeSidebar(progress) {
-  let lo = 0, hi = 1;
-  for (let index = 0; index < 14; index++) {
-    const t = (lo + hi) / 2, inv = 1 - t;
-    const x = 3 * inv * inv * t * .22 + 3 * inv * t * t * .36 + t * t * t;
-    if (x < progress) lo = t; else hi = t;
-  }
-  const t = (lo + hi) / 2;
-  return 1 - Math.pow(1 - t, 3);
-}
-function toggleSidebar() {
-  const from = animatedSidebarWidth ?? (state.sidebarCollapsed ? 72 : 256);
-  finishSidebarMotion();state.sidebarCollapsed = !state.sidebarCollapsed;
-  if (reducedMotion) return;
-  const target = state.sidebarCollapsed ? 72 : 256, started = performance.now();
-  animatedSidebarWidth = from;
-  sidebarAnimation = setInterval(() => {
-    const progress = Math.min(1, (performance.now() - started) / 280);
-    animatedSidebarWidth = from + (target - from) * easeSidebar(progress);
-    if (progress >= 1) finishSidebarMotion();
-    layout();
-  }, 16);
+function applyGuestLayout(request) {
+  if (!request || !Array.isArray(request.panes) || request.panes.length > 2) return;
+  const rect = value => {
+    if (!value || typeof value.id !== 'string') return null;
+    const { id, x, y, width, height } = value;
+    if (![x, y, width, height].every(number => Number.isSafeInteger(number) && number >= 0 && number <= 32768)) return null;
+    return { id, x, y, width, height };
+  };
+  guestLayout = { panes: request.panes.map(rect).filter(Boolean), panel: rect(request.panel) };
+  layout();
 }
 function layout() {
   if (!win || win.isDestroyed()) return;
   const [width, height] = win.getContentSize();
-  const sidebar = Math.round(animatedSidebarWidth ?? (state.sidebarCollapsed ? 72 : 256));
   const ids = visibleIds();
-  const available = Math.max(20, width - sidebar - 20);
-  const paneWidth = ids.length === 2 ? Math.floor((available - 10) / 2) : available;
+  const place = (view, bounds) => {
+    if (view.webContents.isDestroyed()) return;
+    const size = bounds && { x: bounds.x, y: bounds.y,
+      width: Math.min(bounds.width, width - bounds.x), height: Math.min(bounds.height, height - bounds.y) };
+    const visible = Boolean(!overlayOpen && size && size.width > 0 && size.height > 0);
+    if (visible) view.setBounds(size);
+    view.setVisible(visible);
+  };
   for (const [id, view] of views) {
-    const tab = tabById(id), index = ids.indexOf(id);
-    const show = !overlayOpen && index >= 0 && tab && tab.spaceId === state.activeSpaceId && !isInternal(tab.url) && !tab.error;
-    view.setVisible(Boolean(show));
-    if (show) view.setBounds({ x: sidebar + 10 + index * (paneWidth + 10), y: 66,
-      width: index === 1 ? available - paneWidth - 10 : paneWidth, height: Math.max(20, height - 76) });
+    const tab = tabById(id);
+    const show = ids.includes(id) && tab?.spaceId === state.activeSpaceId && !isInternal(tab.url) && !tab.error;
+    place(view, show ? guestLayout?.panes.find(rect => rect.id === id) : null);
+  }
+  if (webPanel) {
+    const show = webPanel.spaceId === state.activeSpaceId && !webPanel.details.error && guestLayout?.panel?.id === webPanel.details.id;
+    place(webPanel.view, show ? guestLayout.panel : null);
   }
 }
 
 function withDeadline(promise, milliseconds = 1500) {
   let timer;
   return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Page did not respond in time')), milliseconds); })]).finally(() => clearTimeout(timer));
+}
+async function flushPersistentSiteData(contexts) {
+  const writes = [...contexts].filter(ses => ses.isPersistent()).map(async ses => {
+    ses.flushStorageData();
+    await ses.cookies.flushStore();
+  });
+  if (writes.length) await withDeadline(Promise.allSettled(writes)).catch(() => {});
 }
 const PIP_SCRIPT = `(() => {
   if (Date.now() > __ORBIT_DEADLINE__) return Promise.resolve({ok:false});
@@ -298,7 +355,7 @@ async function restorePipIfVisible() {
 }
 
 // Chromium retains document-focus and frame policy enforcement.
-function canWriteClipboard(wc){return !!(win&&!win.isDestroyed()&&!overlayOpen&&visibleIds().some(id=>views.get(id)?.webContents===wc));}
+function canWriteClipboard(wc){return !!(win&&!win.isDestroyed()&&!overlayOpen&&(visibleIds().some(id=>views.get(id)?.webContents===wc)||(webPanel?.view.webContents===wc&&webPanel.view.getVisible())));}
 function secureClipboardOrigin(origin){if(!origin)return false;const u=new URL(origin);return u.protocol==='https:'||(u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname));}
 function webOrigin(value) { return isWebURL(value) ? new URL(value).origin : null; }
 
@@ -339,6 +396,17 @@ function configureSession(spaceId) {
   return ses;
 }
 
+function updateDownloadProgress() {
+  if (!win || win.isDestroyed()) return;
+  const active = [...downloadItems.values()].filter(item => item.getState() === 'progressing');
+  if (!active.length) { win.setProgressBar(-1);return; }
+  const totals = active.map(item => item.getTotalBytes());
+  if (totals.some(total => total <= 0)) { win.setProgressBar(2);return; }
+  const total = totals.reduce((sum, bytes) => sum + bytes, 0);
+  const received = active.reduce((sum, item) => sum + item.getReceivedBytes(), 0);
+  win.setProgressBar(Math.min(1, received / total));
+}
+
 function receiveDownload(item) {
     const id = randomUUID();
     const record = { id, filename: item.getFilename(), receivedBytes: 0, totalBytes: item.getTotalBytes(), state: 'progressing', path: '' };
@@ -349,18 +417,16 @@ function receiveDownload(item) {
     } else item.setSaveDialogOptions({ defaultPath: path.join(app.getPath('downloads'), path.basename(item.getFilename())) });
     item.on('updated', (_event, status) => {
       record.receivedBytes = item.getReceivedBytes(); record.totalBytes = item.getTotalBytes(); record.state = status;
-      const total = downloads.filter(d => d.state === 'progressing').reduce((n, d) => n + d.totalBytes, 0);
-      const received = downloads.filter(d => d.state === 'progressing').reduce((n, d) => n + d.receivedBytes, 0);
-      win?.setProgressBar(total ? received / total : 2); publishSoon();
+      updateDownloadProgress(); publishSoon();
     });
     item.once('done', (_event, status) => {
       record.state = status; record.path = item.getSavePath(); record.receivedBytes = item.getReceivedBytes();
-      downloadItems.delete(id); win?.setProgressBar(-1); publish(false);
+      downloadItems.delete(id); updateDownloadProgress(); publish(false);
       notify(status === 'completed' ? `${record.filename} 다운로드 완료` : `${record.filename} 다운로드 ${status === 'cancelled' ? '취소' : '중단'}`);
     });
-    publish(false);
+    updateDownloadProgress(); publish(false);
 }
-function bindShortcuts(wc) {
+function bindShortcuts(wc, panel = false) {
   wc.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown') return;
     const mod = input.control || input.meta;
@@ -375,14 +441,14 @@ function bindShortcuts(wc) {
     if (key === 'f12' || (mod && input.shift && key === 'i')) return consume(() => handleAction('devTools'));
     if (mod && key === 'l') return consume(() => command('focus-address'));
     if (mod && key === 't') return consume(() => command('new-tab'));
-    if (mod && key === 'w') return consume(() => handleAction('closeTab', { id: state.activeTabId }));
+    if (mod && key === 'w') return consume(() => panel ? handleAction('closeWebPanel') : handleAction('closeTab', { id: state.activeTabId }));
     if (mod && key === 'b') return consume(() => handleAction('toggleSidebar', {}));
     if (mod && key === 'j') return consume(() => command('downloads'));
     if (mod && key === ',') return consume(() => command('settings'));
     if (mod && key === '\\') return consume(() => handleAction('split', {}));
-    if ((mod && key === 'r') || key === 'f5') return consume(() => handleAction('reload', {}));
-    if (input.alt && key === 'arrowleft') return consume(() => handleAction('back', {}));
-    if (input.alt && key === 'arrowright') return consume(() => handleAction('forward', {}));
+    if ((mod && key === 'r') || key === 'f5') return consume(() => panel ? handleAction('navigateWebPanel', { action: 'reload' }) : handleAction('reload'));
+    if (input.alt && key === 'arrowleft') return consume(() => panel ? handleAction('navigateWebPanel', { action: 'back' }) : handleAction('back'));
+    if (input.alt && key === 'arrowright') return consume(() => panel ? handleAction('navigateWebPanel', { action: 'forward' }) : handleAction('forward'));
     if (mod && key === 'tab') return consume(() => {
       const tabs = state.tabs.filter(t => t.spaceId === state.activeSpaceId), index = tabs.findIndex(t => t.id === state.activeTabId);
       const target = tabs[(index + (input.shift ? tabs.length - 1 : 1)) % tabs.length];
@@ -391,6 +457,109 @@ function bindShortcuts(wc) {
     if (key === 'f11') return consume(() => win.setFullScreen(!win.isFullScreen()));
   });
 }
+function bindWebContextMenu(tab, view, panel = false) {
+  const wc = view.webContents;
+  const isVisible = () => win && !win.isDestroyed() && !wc.isDestroyed() && view.getVisible() &&
+    (panel ? webPanel?.view === view : views.get(tab.id) === view);
+  wc.on('context-menu', (_event, params) => {
+    if (!isVisible()) return;
+    const pageURL = wc.getURL();
+    const frame = params.frame;
+    if (!wc.isFocused()) wc.focus();
+    if (!panel && state.activeTabId !== tab.id) { state.activeTabId = tab.id;publish(); }
+    const menu = Menu.buildFromTemplate(webContextMenu(wc, params, {
+      openTab: (url, background) => handleAction('openContextTab', { id: panel ? state.activeTabId : tab.id, url, background }).catch(() => {}),
+      copyText: text => clipboard.writeText(text),
+      guard: callback => {
+        if (isVisible() && wc.getURL() === pageURL && (!frame || params.frame === frame)) callback();
+      },
+    }));
+    const bounds = view.getBounds();
+    menu.popup({ window: win, frame, x: bounds.x + params.x, y: bounds.y + params.y, sourceType: params.menuSourceType });
+  });
+}
+
+function closeWebPanel() {
+  const panel = webPanel;
+  if (!panel || panel.view.webContents.isDestroyed()) return Promise.resolve(true);
+  if (panel.closing) return panel.closing.promise;
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  panel.closing = { promise, resolve };
+  try { panel.view.webContents.close({ waitForBeforeUnload: true }); }
+  catch { panel.closing = null; resolve(false); }
+  return promise;
+}
+
+async function openWebPanel(input) {
+  if (typeof input !== 'string' || !input.trim() || input.length > 4096) throw new Error('웹 패널에서 열 주소를 입력하세요.');
+  const url = normalizeInput(input);
+  if (!isWebURL(url)) throw new Error('웹 패널은 HTTP와 HTTPS 주소를 지원합니다.');
+  if (webPanel && webPanel.spaceId !== state.activeSpaceId && !await closeWebPanel()) return;
+  if (quitting || closingWindow || !win || win.isDestroyed()) return;
+  if (!webPanel) {
+    const view = new WebContentsView({ webPreferences: { ...securePreferences, session: configureSession(state.activeSpaceId) } });
+    const details = { id: randomUUID(), url, title: '', loading: true, error: null, canGoBack: false, canGoForward: false };
+    const panel = { view, details, spaceId: state.activeSpaceId, closing: null };
+    webPanel = panel;
+    const wc = view.webContents;
+    win.contentView.addChildView(view);
+    view.setVisible(false);
+    contentsOwners.set(wc.id, controller);
+    bindShortcuts(wc, true);
+    bindWebContextMenu(details, view, true);
+    const allowNavigation = (event, target) => {
+      if (!isWebURL(typeof target === 'string' ? target : event.url)) event.preventDefault();
+    };
+    wc.on('will-navigate', allowNavigation);
+    wc.on('will-redirect', allowNavigation);
+    wc.setWindowOpenHandler(({ url }) => {
+      if (view.getVisible() && isWebURL(url)) handleAction('newTab', { url }).catch(() => {});
+      return { action: 'deny' };
+    });
+    const reportNavigation = () => {
+      const currentURL = wc.getURL();
+      if (isWebURL(currentURL)) details.url = currentURL;
+      details.canGoBack = wc.navigationHistory.canGoBack();
+      details.canGoForward = wc.navigationHistory.canGoForward();
+      publish(false);
+    };
+    wc.on('did-navigate', reportNavigation);
+    wc.on('did-navigate-in-page', reportNavigation);
+    wc.on('page-title-updated', (_event, title) => { details.title = String(title).slice(0, 500); publish(false); });
+    wc.on('did-start-loading', () => { details.loading = true; details.error = null; layout(); publish(false); });
+    wc.on('did-stop-loading', () => { details.loading = false; reportNavigation(); });
+    const fail = () => {
+      details.error = '웹 패널의 페이지를 열 수 없습니다. 주소를 확인하거나 다시 불러오세요.';
+      details.loading = false;
+      layout(); publish(false);
+    };
+    wc.on('did-fail-load', (_event, code, _description, _url, isMainFrame) => {
+      if (isMainFrame && code !== -3) fail();
+    });
+    wc.on('render-process-gone', fail);
+    wc.on('will-prevent-unload', event => {
+      if (!win || win.isDestroyed()) { event.preventDefault(); return; }
+      const response = dialog.showMessageBoxSync(win, { type: 'question', title: '웹 패널에서 나갈까요?',
+        message: '저장하지 않은 내용이 사라질 수 있습니다.', buttons: ['계속 작성', '나가기'], defaultId: 0, cancelId: 0, noLink: true });
+      if (response === 1) event.preventDefault();
+      else { panel.closing?.resolve(false); panel.closing = null; }
+    });
+    wc.once('destroyed', () => {
+      contentsOwners.delete(wc.id);
+      if (webPanel === panel) webPanel = null;
+      if (win && !win.isDestroyed()) win.contentView.removeChildView(view);
+      panel.closing?.resolve(true);
+      layout(); publish(false);
+    });
+  }
+  const panel = webPanel;
+  panel.details.url = url;
+  panel.details.title = '';
+  panel.details.error = null;
+  panel.view.webContents.loadURL(url).catch(() => {});
+}
+
 function updateNavigation(tab, wc) {
   if (wc.isDestroyed()) return;
   const url = wc.getURL();
@@ -412,6 +581,7 @@ function ensureView(tab, shouldLoad = true, popupOptions = {}) {
   contentsOwners.set(wc.id, controller);
   wc.once('destroyed', () => contentsOwners.delete(wc.id));
   bindShortcuts(wc);
+  bindWebContextMenu(tab, view);
   wc.on('will-prevent-unload', event => {
     const response = dialog.showMessageBoxSync(win, { type: 'question', title: '페이지에서 나갈까요?',
       message: '저장하지 않은 내용이 있을 수 있어요.', detail: '나가면 입력 중인 내용이 사라질 수 있습니다.',
@@ -463,12 +633,28 @@ function ensureView(tab, shouldLoad = true, popupOptions = {}) {
     if(!incognito&&state.searchPreferences.saveHistory){const url=safeVisit(wc.getURL());const entry=state.history.find(r=>r.kind==='visit'&&r.spaceId===tab.spaceId&&r.value===url);if(entry){entry.title=tab.title;syncShared('history');}}
     publish();
   });
-  wc.on('page-favicon-updated', (_event, urls) => {
-    const pageOrigin = webOrigin(tab.url);
-    const candidates = Array.isArray(urls) ? urls.filter(isWebURL).slice(0, 4) : [];
-    if (isWebURL(tab.url)) candidates.push(new URL('/favicon.ico', tab.url).href);
-    (async () => { for (const url of [...new Set(candidates)]) if (webOrigin(tab.url) !== pageOrigin || await updateFavicon(tab, url)) break; })().catch(() => {});
-  });
+  let iconAttempted = false, iconRevision = 0;
+  const discoverFavicon = urls => {
+    const pageURL = wc.getURL();
+    if (!isWebURL(pageURL)) return;
+    const revision = ++iconRevision, spaceId = tab.spaceId;
+    iconAttempted = true;
+    const isCurrent = () => !quitting && !wc.isDestroyed() && revision === iconRevision &&
+      views.get(tab.id) === view && tab.spaceId === spaceId && wc.getURL() === pageURL && tab.url === pageURL;
+    const candidates = urls.filter(url => typeof url === 'string' &&
+      (url.startsWith('data:') ? url.length <= maxIconBytes : url.length <= 4096 && isWebURL(url))).slice(0, 4);
+    candidates.push(new URL('/favicon.ico', pageURL).href);
+    (async () => {
+      for (const url of new Set(candidates)) {
+        if (!isCurrent()) return;
+        const icon = await fetchFavicon(wc, spaceId, pageURL, url, isCurrent);
+        if (!icon || !isCurrent()) continue;
+        applyFavicon(tab, icon);
+        return;
+      }
+    })().catch(() => {});
+  };
+  wc.on('page-favicon-updated', (_event, urls) => discoverFavicon(Array.isArray(urls) ? urls : []));
   wc.on('found-in-page', (_event, result) => {
     if (state.activeTabId !== tab.id) return;
     findResult = { matches: result.matches, activeMatchOrdinal: result.activeMatchOrdinal };
@@ -476,8 +662,19 @@ function ensureView(tab, shouldLoad = true, popupOptions = {}) {
   });
   wc.on('audio-state-changed', () => { tab.muted = wc.isAudioMuted();publish(false); });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; publish(false); layout(); });
-  wc.on('did-stop-loading', () => { tab.loading = false; updateNavigation(tab, wc);if(!tab.error&&isWebURL(wc.getURL())&&!(new URL(wc.getURL()).hostname==='www.google.com'&&new URL(wc.getURL()).pathname==='/search'))remember('visit',safeVisit(wc.getURL()),tab.title,tab.spaceId);layout(); });
-  wc.on('did-navigate', () => { findSessions.delete(tab.id);updateNavigation(tab, wc); });
+  wc.on('did-stop-loading', () => {
+    tab.loading = false;
+    updateNavigation(tab, wc);
+    const url = isWebURL(wc.getURL()) ? new URL(wc.getURL()) : null;
+    if (!tab.error && url) {
+      if (url.hostname !== 'www.google.com' || url.pathname !== '/search') {
+        remember('visit', safeVisit(url.href), tab.title, tab.spaceId, tab.faviconURL);
+      }
+      if (!iconAttempted && !tab.faviconURL) discoverFavicon([]);
+    }
+    layout();
+  });
+  wc.on('did-navigate', () => { iconAttempted = false; ++iconRevision; findSessions.delete(tab.id);updateNavigation(tab, wc); });
   wc.on('did-navigate-in-page', () => updateNavigation(tab, wc));
   wc.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) { tab.error = `${description} (${code})`; tab.loading = false; publish(false); layout(); }
@@ -512,7 +709,7 @@ function removeTab(id, preferredId) {
   const target = tabById(id);if (!target) return;
   if (!incognito && isWebURL(target.url)) {
     state.archivedTabs.unshift({ id: target.id, spaceId: target.spaceId, title: target.title, url: target.url,
-      pinned: target.pinned === true, folderId: target.folderId || null, closedAt: Date.now() });
+      pinned: target.pinned === true, folderId: target.folderId || null, faviconURL: safeRasterFaviconURL(target.faviconURL), closedAt: Date.now() });
     state.archivedTabs = state.archivedTabs.slice(0, 100);
   }
   state.tabs = state.tabs.filter(t => t.id !== id);
@@ -540,45 +737,73 @@ async function activateTab(tab) {
   ensureView(tab); layout(); publish();
   if (!overlayOpen) views.get(tab.id)?.webContents.focus();
 }
-async function updateFavicon(tab, url) {
-  if (quitting || !isWebURL(url) || !tabById(tab.id)) return;
-  const sourceOrigin = webOrigin(tab.url), sourceSpaceId = tab.spaceId;
-  const key = `${sourceSpaceId}|${url}`;
-  let pending = faviconRequests.get(key);
-  if (!pending) {
-    if (faviconAborts.size >= 4) return false;
-    pending = (async () => {
-      const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 4000);
-      faviconAborts.add(abort);
+async function fetchFavicon(wc, spaceId, pageURL, url, isCurrent) {
+  const inline = decodeInlineFavicon(url);
+  if (!inline && (!isWebURL(url) || (pageURL.startsWith('https:') && url.startsWith('http:')))) return null;
+  const key = inline ? null : `${spaceId}|${url}`;
+  const cached = key && faviconRequests.get(key);
+  if (cached?.expiresAt > Date.now()) return cached.promise;
+  while (faviconJobs.size >= 4) await Promise.race(faviconJobs.values());
+  if (!isCurrent()) return null;
+  const refreshed = key && faviconRequests.get(key);
+  if (refreshed?.expiresAt > Date.now()) return refreshed.promise;
+  const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 4000);
+  const entry = { expiresAt: Infinity, promise: (async () => {
       try {
-        let current = url, response;
-        for (let redirects = 0; redirects <= 3; redirects++) {
-          if (quitting) return null;
-          response = await configureSession(sourceSpaceId).fetch(current, { credentials: 'omit', redirect: 'manual', signal: abort.signal });
-          if (response.status < 300 || response.status >= 400) break;
-          const next = new URL(response.headers.get('location') || '', current).href;
-          if (!isWebURL(next) || redirects === 3) return null;
-          current = next;
+        let bytes = inline?.bytes, type = inline?.type;
+        if (!inline) {
+          let current = url, response;
+          for (let redirects = 0; redirects <= 3; redirects++) {
+            if (quitting) return null;
+            response = await configureSession(spaceId).fetch(current, { credentials: 'omit', referrerPolicy: 'no-referrer', redirect: 'manual', signal: abort.signal });
+            if (response.status < 300 || response.status >= 400) break;
+            const location = response.headers.get('location');
+            if (!location || redirects === 3) return null;
+            current = new URL(location, current).href;
+            if (!isWebURL(current) || (pageURL.startsWith('https:') && current.startsWith('http:'))) return null;
+          }
+          type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+          if (!response.ok || !response.body || /html/i.test(type) || Number(response.headers.get('content-length')) > maxIconBytes) return null;
+          const chunks = [];let length = 0;
+          for await (const chunk of response.body) {
+            length += chunk.length;
+            if (length > maxIconBytes) return null;
+            chunks.push(Buffer.from(chunk));
+          }
+          bytes = Buffer.concat(chunks);
         }
-        if (!response?.ok || /svg|xml|html/i.test(response.headers.get('content-type') || '') || Number(response.headers.get('content-length')) > 256 * 1024) return null;
-        const chunks = [];let length = 0;
-        for await (const chunk of response.body) {
-          length += chunk.length;if (length > 256 * 1024) { abort.abort();return null; }
-          chunks.push(Buffer.from(chunk));
+        const raster = boundedRaster(bytes);
+        if (!raster && !svgFavicon(bytes, type)) return null;
+        if (raster) {
+          const icon = nativeImage.createFromBuffer(bytes);
+          if (!icon.isEmpty()) return icon.resize({ width: 32, height: 32, quality: 'best' }).toDataURL();
         }
-        const bytes = Buffer.concat(chunks);if (!boundedRaster(bytes)) return null;
-        const icon = nativeImage.createFromBuffer(bytes);
-        if (icon.isEmpty()) return null;
-        const png = icon.resize({ width: 32, height: 32, quality: 'best' }).toPNG();
-        return sanitizeFaviconURL(`data:image/png;base64,${png.toString('base64')}`);
-      } catch { return null; } finally { clearTimeout(timer);abort.abort();faviconAborts.delete(abort); }
-    })();
-    faviconRequests.set(key, pending);
+        if (!isCurrent() || abort.signal.aborted) return null;
+        const data = await withDeadline(wc.executeJavaScriptInIsolatedWorld(1139,
+          [{ code: faviconImageScript(bytes, raster ? 'image/x-icon' : 'image/svg+xml') }]), 1500);
+        return data?.length <= 8192 && data.startsWith('data:image/png;base64,') ? safeRasterFaviconURL(data) : null;
+      } catch { return null; }
+    })().finally(() => { clearTimeout(timer);abort.abort();faviconJobs.delete(abort); }) };
+  faviconJobs.set(abort, entry.promise);
+  if (key) {
+    faviconRequests.set(key, entry);
     if (faviconRequests.size > 200) faviconRequests.delete(faviconRequests.keys().next().value);
   }
-  const data = await pending;
-  if (data && !quitting && tabById(tab.id) === tab && tab.spaceId === sourceSpaceId && webOrigin(tab.url) === sourceOrigin) { tab.faviconURL = data;publish();return true; }
-  return false;
+  const data = await entry.promise;
+  entry.expiresAt = Date.now() + (data ? 60 * 60 * 1000 : 60 * 1000);
+  return data;
+}
+function applyFavicon(tab, data) {
+  let changed = tab.faviconURL !== data;
+  tab.faviconURL = data;
+  if (!incognito) {
+    const visited = safeVisit(tab.url);
+    const entry = state.history.find(item => item.kind === 'visit' && item.spaceId === tab.spaceId && item.value === visited);
+    if (entry && entry.faviconURL !== data) { entry.faviconURL = data;changed = true;syncShared('history'); }
+    const favorite = state.favorites.find(item => item.url === tab.url);
+    if (favorite && favorite.faviconURL !== data) { favorite.faviconURL = data;changed = true;syncShared('favorites'); }
+  }
+  if (changed) publish();
 }
 function blankWindowState(privateMode, source = state) {
   const next = JSON.parse(JSON.stringify(source));
@@ -592,6 +817,7 @@ function syncShared(key) {
   for (const other of controllers) {
     if (other === controller || (key === 'history' && other.incognito)) continue;
     other.state[key] = JSON.parse(JSON.stringify(state[key]));
+    if (key === 'appearance') other.layout();
     other.publish();
   }
 }
@@ -719,18 +945,31 @@ async function performAction(name, payload = {}) {
     case 'newWindow':
     case 'newIncognitoWindow': {
       const privateMode = name === 'newIncognitoWindow';
-      const source = incognito && !privateMode ? [...controllers].find(owner => !owner.incognito)?.state || createDefaultState() : state;
-      const other = createController({ incognito: privateMode, initialState: blankWindowState(privateMode, source) });
+      const normal = incognito && !privateMode
+        ? [...controllers].find(owner => !owner.incognito && owner.win && !owner.win.isDestroyed())
+        : controller;
+      const other = normal
+        ? createController({ incognito: privateMode, initialState: blankWindowState(privateMode, normal.state) })
+        : createController({ initialState: readNormalProfile(), primary: true });
       await other.ready;break;
     }
     case 'createFolder': {
       if (state.folders.length >= 100) throw new Error('폴더는 최대 100개까지 만들 수 있어요.');
       const name = String(payload.name || '').trim().slice(0, 80);if (!name) throw new Error('폴더 이름을 입력해 주세요.');
-      state.folders.push({ id: randomUUID(), spaceId: state.activeSpaceId, name, collapsed: false });break;
+      const id = randomUUID();
+      const tab = tabById(payload.tabId);
+      const color = typeof payload.color === 'string' && /^#[0-9a-f]{6}$/i.test(payload.color) ? payload.color.toLowerCase() : null;
+      state.folders.push({ id, spaceId: state.activeSpaceId, name, collapsed: false, ...(color ? { color } : {}) });
+      if (tab?.spaceId === state.activeSpaceId) tab.folderId = id;
+      break;
     }
     case 'renameFolder': {
       const folder = state.folders.find(entry => entry.id === payload.id);
-      const name = String(payload.name || '').trim().slice(0, 80);if (folder && name) folder.name = name;break;
+      const name = String(payload.name || '').trim().slice(0, 80);if (folder && name) {
+        folder.name = name;
+        if (typeof payload.color === 'string' && /^#[0-9a-f]{6}$/i.test(payload.color)) folder.color = payload.color.toLowerCase();
+      }
+      break;
     }
     case 'toggleFolder': { const folder = state.folders.find(entry => entry.id === payload.id);if (folder) folder.collapsed = !folder.collapsed;break; }
     case 'deleteFolder': {
@@ -772,6 +1011,34 @@ async function performAction(name, payload = {}) {
       }
       syncShared('favorites');break;
     }
+    case 'addFavorite':
+    case 'editFavorite': {
+      if (incognito) throw new Error('즐겨찾기 변경은 일반 창에서 사용할 수 있어요.');
+      const url = typeof payload.url === 'string' && payload.url.length <= 4096 ? URL.parse(payload.url) : null;
+      if (!url || !isWebURL(url.href) || url.username || url.password) throw new Error('올바른 웹 주소를 입력해 주세요.');
+      const target = name === 'editFavorite' ? state.favorites.find(entry => entry.id === payload.id) : null;
+      if (name === 'editFavorite' && !target) throw new Error('즐겨찾기가 더 이상 존재하지 않습니다.');
+      if (state.favorites.some(entry => entry.id !== target?.id && entry.url === url.href)) throw new Error('이미 즐겨찾기에 추가한 주소입니다.');
+      if (!target && state.favorites.length >= 50) throw new Error('즐겨찾기는 최대 50개까지 저장할 수 있어요.');
+      const title = typeof payload.title === 'string' ? payload.title.trim().slice(0, 100) : '';
+      if (target) {
+        if (target.url !== url.href) target.faviconURL = null;
+        target.url = url.href;
+        target.title = title || url.hostname;
+      } else state.favorites.push({ id: randomUUID(), title: title || url.hostname, url: url.href, faviconURL: null });
+      syncShared('favorites');break;
+    }
+    case 'moveFavorite': {
+      if (incognito) break;
+      const index = state.favorites.findIndex(entry => entry.id === payload.id);
+      const offset = payload.direction === 'earlier' ? -1 : payload.direction === 'later' ? 1 : 0;
+      const next = index + offset;
+      if (index < 0 || !offset || next < 0 || next >= state.favorites.length) break;
+      const [favorite] = state.favorites.splice(index, 1);
+      state.favorites.splice(next, 0, favorite);
+      syncShared('favorites');
+      break;
+    }
     case 'removeFavorite': {
       if (incognito) throw new Error('즐겨찾기 변경은 일반 창에서 사용할 수 있어요.');
       state.favorites = state.favorites.filter(entry => entry.id !== payload.id);syncShared('favorites');break;
@@ -779,7 +1046,9 @@ async function performAction(name, payload = {}) {
     case 'openFavorite': {
       const favorite = state.favorites.find(entry => entry.id === payload.id);if (!favorite) break;
       const existing = state.tabs.find(entry => entry.spaceId === state.activeSpaceId && entry.url === favorite.url);
-      await activateTab(existing || makeTab(favorite.url));break;
+      const target = existing || makeTab(favorite.url);
+      target.faviconURL ||= safeRasterFaviconURL(favorite.faviconURL);
+      await activateTab(target);break;
     }
     case 'archiveTab': {
       const target = tabById(payload.id || state.activeTabId);if (target && await requestCloseView(target.id)) removeTab(target.id, target.openerId);break;
@@ -795,6 +1064,7 @@ async function performAction(name, payload = {}) {
       if (!archived || !isWebURL(archived.url)) break;
       const spaceId = state.spaces.some(entry => entry.id === archived.spaceId) ? archived.spaceId : state.activeSpaceId;
       const restored = makeTab(archived.url, spaceId);restored.title = archived.title;restored.pinned = archived.pinned;
+      restored.faviconURL = safeRasterFaviconURL(archived.faviconURL);
       restored.folderId = state.folders.some(folder => folder.id === archived.folderId && folder.spaceId === spaceId) ? archived.folderId : null;
       state.archivedTabs = state.archivedTabs.filter(entry => entry.id !== archived.id);state.splitTabIds = [];
       await activateTab(restored);break;
@@ -866,10 +1136,22 @@ async function performAction(name, payload = {}) {
     }
     case 'showExtension': if (typeof payload.id === 'string' && /^[a-p]{32}$/.test(payload.id)) await showExtension(payload.id);break;
     case 'checkUpdates': await dialog.showMessageBox(win, { type: 'info', title: 'Orbit 업데이트', message: `현재 버전 ${app.getVersion()}`,
-      detail: '이 베타 버전은 수동 업데이트를 지원합니다. 배포받은 새 Orbit 설치 파일을 실행하면 기존 스페이스와 로그인 정보가 유지됩니다. 공개 업데이트 서버와 자동 업데이트는 아직 연결되지 않았습니다.', buttons: ['확인'] });break;
+      detail: 'Orbit은 수동 업데이트를 지원합니다. 배포받은 새 Orbit 설치 파일을 실행하면 기존 스페이스와 로그인 정보가 유지됩니다. 공개 업데이트 서버와 자동 업데이트는 아직 연결되지 않았습니다.', buttons: ['확인'] });break;
     case 'newTab': {
       const url = payload.url ? normalizeInput(payload.url) : HOME;
-      await activateTab(makeTab(url)); break;
+      const target = makeTab(url);
+      const folder = state.folders.find(entry => entry.id === payload.folderId && entry.spaceId === target.spaceId);
+      if (folder) target.folderId = folder.id;
+      await activateTab(target); break;
+    }
+    case 'openContextTab': {
+      const opener = tabById(payload.id);
+      if (!opener || opener.spaceId !== state.activeSpaceId || !isWebURL(payload.url)) break;
+      const target = makeTab(payload.url, opener.spaceId);
+      target.openerId = opener.id;
+      if (payload.background === true) ensureView(target);
+      else await activateTab(target);
+      break;
     }
     case 'activateTab': {
       const target = tabById(payload.id); if (target && target.spaceId === state.activeSpaceId) await activateTab(target); break;
@@ -881,6 +1163,7 @@ async function performAction(name, payload = {}) {
     }
     case 'pinTab': { const target = tabById(payload.id); if (target) target.pinned = !target.pinned; break; }
     case 'navigate': {
+      if (payload.targetTabId && payload.targetTabId !== tab.id) break;
       const url = normalizeInput(payload.input);
       if(/^!y\s+/i.test(String(payload.input||'')))remember('search',String(payload.input).trim(),String(payload.input).trim());
       if(url!==HOME){const parsed=new URL(url);if(parsed.hostname==='www.google.com'&&parsed.pathname==='/search'&&parsed.searchParams.get('q')===String(payload.input||'').trim())remember('search',String(payload.input).trim(),String(payload.input).trim());}
@@ -928,26 +1211,126 @@ async function performAction(name, payload = {}) {
       }
       configureSession(space.id).clearStorageData().catch(() => {}); break;
     }
+    case 'appearance': {
+      const { customImage: _customImage, ...settings } = payload;
+      state.appearance = sanitizeAppearance({ ...state.appearance, ...settings });
+      if (!incognito) syncShared('appearance');
+      break;
+    }
+    case 'exportAppearance': {
+      if (incognito) break;
+      const picked = await dialog.showSaveDialog(win, {
+        title: '꾸미기 설정 내보내기',
+        defaultPath: 'Orbit-appearance.json',
+        filters: [{ name: 'Orbit 꾸미기', extensions: ['json'] }],
+      });
+      if (picked.canceled || !picked.filePath || quitting) break;
+      await fs.promises.writeFile(picked.filePath, JSON.stringify({
+        format: 'orbit-appearance', version: 1, appearance: state.appearance,
+      }, null, 2) + '\n', 'utf8');
+      notify('꾸미기 설정을 저장했습니다.');
+      break;
+    }
+    case 'importAppearance': {
+      if (incognito) break;
+      const picked = await dialog.showOpenDialog(win, {
+        title: '꾸미기 설정 가져오기',
+        properties: ['openFile'],
+        filters: [{ name: 'Orbit 꾸미기', extensions: ['json'] }],
+      });
+      if (picked.canceled || !picked.filePaths[0] || quitting) break;
+      const appearance = await readAppearanceProfile(picked.filePaths[0]);
+      if (quitting) break;
+      state.appearance = appearance;
+      syncShared('appearance');
+      notify('꾸미기 설정을 적용했습니다.');
+      break;
+    }
+    case 'resetAppearance':
+    case 'removeWallpaper':
+    case 'pickWallpaper': {
+      if (name === 'resetAppearance') state.appearance = sanitizeAppearance();
+      else if (name === 'removeWallpaper') {
+        state.appearance = sanitizeAppearance({ ...state.appearance, customImage: null });
+      } else {
+        const picked = await dialog.showOpenDialog(win, {
+          title: '새 탭 배경 사진 선택',
+          properties: ['openFile'],
+          filters: [{ name: '사진 (JPG, PNG)', extensions: ['jpg', 'jpeg', 'png'] }],
+        });
+        if (picked.canceled || !picked.filePaths[0] || quitting) break;
+        const customImage = await loadWallpaper(picked.filePaths[0], nativeImage);
+        if (quitting) break;
+        state.appearance = sanitizeAppearance({ ...state.appearance, background: 'custom', customImage });
+      }
+      if (!incognito) syncShared('appearance');
+      break;
+    }
     case 'theme': if (/^#[0-9a-f]{6}$/i.test(payload.color)) { state.themeColor = payload.color; const space = state.spaces.find(s => s.id === state.activeSpaceId); space.color = payload.color; } break;
     case 'autoPip': state.autoPip = payload.enabled === true; break;
     case 'pip': await enterPip(tab, true); break;
     case 'split': {
       if (state.splitTabIds.length) { state.splitTabIds = []; break; }
-      const other = state.tabs.find(t => t.spaceId === state.activeSpaceId && t.id !== tab.id && t.url !== HOME) || state.tabs.find(t => t.spaceId === state.activeSpaceId && t.id !== tab.id) || makeTab(HOME);
+      const selected = tabById(payload.id);
+      const other = (selected?.spaceId === state.activeSpaceId && selected.id !== tab.id ? selected : null)
+        || state.tabs.find(t => t.spaceId === state.activeSpaceId && t.id !== tab.id && t.url !== HOME)
+        || state.tabs.find(t => t.spaceId === state.activeSpaceId && t.id !== tab.id) || makeTab(HOME);
       state.splitTabIds = [tab.id, other.id]; ensureView(tab); ensureView(other); break;
     }
-    case 'unsplit': state.splitTabIds = []; break;
-    case 'toggleSidebar': toggleSidebar(); break;
-    case 'motionPreference': reducedMotion = payload.reduced === true; if (reducedMotion) finishSidebarMotion(); break;
-    case 'defaultBrowserSettings':
-      if (process.platform === 'win32') await shell.openExternal('ms-settings:defaultapps?registeredAppUser=Orbit');
+    case 'unsplit': {
+      const keep = state.splitTabIds.includes(payload.removeId) && state.splitTabIds.find(id => id !== payload.removeId);
+      state.splitTabIds = [];
+      if (keep) await activateTab(tabById(keep));
       break;
+    }
+    case 'replaceSplitTab': {
+      const index = state.splitTabIds.indexOf(payload.id);
+      if (state.splitTabIds.length !== 2 || index < 0) break;
+      const target = payload.targetId ? tabById(payload.targetId) : makeTab(HOME);
+      if (target?.spaceId !== state.activeSpaceId || state.splitTabIds.includes(target.id)) break;
+      state.splitTabIds[index] = target.id;
+      await activateTab(target);
+      break;
+    }
+    case 'resizeSplit':
+      if (state.splitTabIds.length === 2 && Number.isFinite(payload.ratio)) state.splitRatio = Math.min(73, Math.max(27, Math.round(payload.ratio)));
+      break;
+    case 'openWebPanel': await openWebPanel(payload.input); break;
+    case 'closeWebPanel': await closeWebPanel(); break;
+    case 'navigateWebPanel': {
+      const contents = webPanel?.spaceId === state.activeSpaceId && webPanel.view.webContents;
+      if (!contents || contents.isDestroyed()) break;
+      if (payload.action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+      if (payload.action === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+      if (payload.action === 'reload') contents.reload();
+      break;
+    }
+    case 'promoteWebPanel':
+      if (webPanel?.spaceId === state.activeSpaceId && isWebURL(webPanel.details.url)) await activateTab(makeTab(webPanel.details.url));
+      break;
+    case 'toggleSidebar': state.sidebarCollapsed = !state.sidebarCollapsed; break;
+    case 'motionPreference': reducedMotion = payload.reduced === true; break;
+    case 'defaultBrowserSettings':
+      if (process.platform === 'win32') {
+        await shell.openExternal('ms-settings:defaultapps?registeredAppUser=Orbit').catch(() => shell.openExternal('ms-settings:defaultapps'));
+      }
+      break;
+    case 'openLocalDocument': {
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: 'Orbit에서 로컬 파일 열기',
+        properties: ['openFile'],
+        filters: [{ name: '웹 문서 및 PDF', extensions: [...fileTypes.keys()].map(extension => extension.slice(1)) }],
+      });
+      if (!canceled && filePaths[0]) await openDocument(filePaths[0]);
+      break;
+    }
     case 'clearSiteData': {
       const space = state.spaces.find(s => s.id === state.activeSpaceId);
       const { response } = await dialog.showMessageBox(win, { type: 'question', title: '사이트 데이터 삭제',
         message: `“${space.name}”의 쿠키와 캐시를 삭제할까요?`, detail: '이 스페이스의 사이트에서 로그아웃됩니다. 탭과 고정 탭은 유지됩니다.', buttons: ['취소', '삭제'], defaultId: 0, cancelId: 0 });
       if (response !== 1) break;
       const ses = configureSession(space.id);await ses.clearCache();await ses.clearStorageData();
+      await flushPersistentSiteData([ses]);
       const partition = incognito ? `orbit-private-${windowId}-${space.id}` : `persist:orbit-${space.id}`;
       for (const key of permissionDecisions.keys()) if (key.startsWith(`${partition}|`)) permissionDecisions.delete(key);
       notify('현재 스페이스의 사이트 데이터를 삭제했습니다.');break;
@@ -962,7 +1345,7 @@ async function performAction(name, payload = {}) {
     default: throw new Error('Unknown action');
   }
   layout();
-  if (win?.isFocused() && ['activateTab', 'switchSpace', 'split', 'unsplit', 'newTab'].includes(name)) await restorePipIfVisible();
+  if (win?.isFocused() && ['activateTab', 'switchSpace', 'split', 'unsplit', 'replaceSplitTab', 'newTab'].includes(name)) await restorePipIfVisible();
   publish(); return snapshot();
 }
 
@@ -972,6 +1355,14 @@ async function startWindow() {
     webPreferences: { ...securePreferences, preload: path.join(__dirname, 'preload.cjs') } });
   contentsOwners.set(win.webContents.id, controller);
   bindShortcuts(win.webContents);
+  win.webContents.on('context-menu', (_event, params) => {
+    const contents = win.webContents;
+    const item = (id, label, click, enabled) => chromeMenuItem(id, label, () => {
+      if (!contents.isDestroyed()) click();
+    }, enabled);
+    const items = params.isEditable ? editableItems(contents, params, item) : [];
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win, x: params.x, y: params.y, sourceType: params.menuSourceType, frame: params.frame || undefined });
+  });
   win.webContents.on('will-navigate', event => event.preventDefault());
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.on('resize', layout); win.on('maximize', () => publish(false)); win.on('unmaximize', () => publish(false));
@@ -984,6 +1375,7 @@ async function startWindow() {
     if (quitting) return;
     event.preventDefault();if (closingWindow) return;closingWindow = true;
     (async () => {
+      if (!await closeWebPanel()) { closingWindow = false; return; }
       for (const id of [...views.keys()]) {
         if (!await requestCloseView(id)) {
           closingWindow = false;
@@ -991,7 +1383,8 @@ async function startWindow() {
           layout();publish();return;
         }
       }
-      finishSidebarMotion();clearTimeout(saveTimer);saveNow();
+      if (!incognito) await flushPersistentSiteData(sessions.values());
+      clearTimeout(saveTimer);saveNow();
       const otherNormalWindow = [...controllers].some(owner => owner !== controller && !owner.incognito && owner.win && !owner.win.isDestroyed());
       if (!incognito && !otherNormalWindow) saveNow(path.join(app.getPath('userData'), 'orbit-state.json'));
       quitting = true;
@@ -1001,7 +1394,8 @@ async function startWindow() {
   win.on('closed', () => {
     clearTimeout(blurTimer);clearTimeout(noticeTimer);clearTimeout(publishTimer);clearTimeout(saveTimer);
     win = null;
-    for (const abort of faviconAborts) abort.abort();
+    if (webPanel && !webPanel.view.webContents.isDestroyed()) webPanel.view.webContents.close();
+    for (const abort of faviconJobs.keys()) abort.abort();
     for (const popup of extensionWindows) if (!popup.isDestroyed()) popup.destroy();
     for (const item of downloadItems.values()) { try { item.cancel(); } catch {} }
     for (const [id, owner] of contentsOwners) if (owner === controller) contentsOwners.delete(id);
@@ -1040,6 +1434,18 @@ function trusted(event) {
 ipcMain.handle('orbit:state', event => trusted(event).snapshot());
 ipcMain.handle('orbit:action', async (event, name, payload) => trusted(event).handleAction(name, payload));
 ipcMain.handle('orbit:suggest',(event,query)=>trusted(event).suggest(query));
+ipcMain.handle('orbit:seoul-weather', async event => {
+  const owner = trusted(event);
+  const allowWeather = () => !TEST && !owner.incognito && owner.state.appearance?.showWeather !== false;
+  const weather = await getSeoulWeather(allowWeather());
+  return allowWeather() ? weather : getSeoulWeather(false);
+});
+ipcMain.handle('orbit:chrome-menu', (event, request) => trusted(event).openChromeMenu(request));
+ipcMain.on('orbit:guest-layout', (event, request) => {
+  let owner;
+  try { owner = trusted(event); } catch { return; }
+  owner.applyGuestLayout(request);
+});
 for (const [channel, type] of [['orbit:login-ready', 'ready'], ['orbit:login-save', 'save']]) ipcMain.on(channel, (event, value) => {
   const owner = contentsOwners.get(event.sender.id);
   if (!owner || event.sender === owner.win?.webContents) return;
@@ -1048,9 +1454,7 @@ for (const [channel, type] of [['orbit:login-ready', 'ready'], ['orbit:login-sav
 
 app.whenReady().then(async () => {
   if (!hasLock) return;
-  let state;
-  try { state = sanitizeState(JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'orbit-state.json'), 'utf8'))); }
-  catch { state = createDefaultState(); }
+  const state = readNormalProfile();
   Menu.setApplicationMenu(null);
   await restoreRpcExtensions();
   rpcBridge = new OrbitRpcBridge({
@@ -1064,7 +1468,9 @@ app.whenReady().then(async () => {
   if (rpcExtensions.size) rpcBridge.start();
   const primary = createController({ initialState: state, primary: true });
   await primary.ready;
-  for (const url of externalURLs.splice(0)) await primary.handleAction('newTab', { url });
+  const queued = externalLaunches;
+  externalLaunches = null;
+  for (const args of queued) await routeExternalLaunch(args, { focus: false }).catch(console.error);
 }).catch(error => { console.error(error); app.exit(1); });
 app.on('window-all-closed', () => app.quit());
 app.on('will-quit', () => rpcBridge?.stop());
@@ -1074,10 +1480,6 @@ app.on('before-quit', event => {
   appQuitting = true;for (const owner of controllers) owner.saveNow();
 });
 app.on('second-instance', (_event, args) => {
-  const urls = args.filter(isWebURL).slice(0, 20);
-  const owner = [...controllers].find(candidate => candidate.win?.isFocused()) || [...controllers].find(candidate => !candidate.incognito) || [...controllers][0];
-  if (owner?.win && !owner.win.isDestroyed()) {
-    if (owner.win.isMinimized()) owner.win.restore();owner.win.show();owner.win.focus();
-    for (const url of urls) owner.handleAction('newTab', { url }).catch(console.error);
-  } else externalURLs.push(...urls);
+  if (externalLaunches) externalLaunches.push(args);
+  else routeExternalLaunch(args).catch(console.error);
 });

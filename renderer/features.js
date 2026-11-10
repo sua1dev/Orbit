@@ -7,33 +7,38 @@ function menuRow(label, symbol, handler, shortcut, action) {
   if(shortcut)row.append(el('kbd','',shortcut));
   return row;
 }
-async function openAppMenu(){
+async function openAppMenu(event){
+  const fromToolbar=event?.currentTarget===$('moreButton');
   if(!state)return;const epoch=await openOverlay('menu');if(epoch!==overlayEpoch||overlayKind!=='menu')return;
-  const menu=el('section','app-menu');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Orbit 메뉴');
-  const heading=el('div','app-menu-brand');heading.append(el('span','orbit-mark'),el('strong','','Orbit'),el('span','version-pill',state.incognito?'시크릿':'BETA'));
+  const menu=el('section',fromToolbar?'app-menu app-menu-right':'app-menu');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Orbit 메뉴');
+  const heading=el('div','app-menu-brand');heading.append(el('span','orbit-mark'),el('strong','','Orbit'),el('span','version-pill',state.incognito?'시크릿':state.version));
   menu.append(heading);
   const direct=(name,payload={})=>async()=>{await closeOverlay();await send(name,payload);};
   const items=[
-    ['업데이트 확인','update',direct('checkUpdates'),'수동 업데이트','updates'],
-    ['다른 브라우저에서 가져오기','import',direct('importBookmarks'),'북마크','import'],
-    null,
     ['새 탭','plus',async()=>{await closeOverlay();await newTab();},'Ctrl T','new-tab'],
+    ['파일 열기','folder',direct('openLocalDocument'),'','open-file'],
     ['새 창','newWindow',direct('newWindow'),'Ctrl N','new-window'],
     ['새 시크릿 창','incognito',direct('newIncognitoWindow'),'Ctrl Shift N','incognito'],
     null,
     ['스페이스','spaces',openSpaces,'›','spaces'],
     ['탭과 폴더','tabs',openTabLibrary,'›','tabs'],
+    ['현재 탭 즐겨찾기 추가·제거','star',direct('favoriteTab',{id:state.activeTabId}),'Ctrl D','favorite-tab'],
     ['즐겨찾기','star',openFavorites,'›','favorites'],
     ['닫은 탭 보관함','archive',openArchives,'Ctrl Shift T','archives'],
     null,
     ['확장 프로그램','extension',openExtensions,'›','extensions'],
     ['개발자 도구','code',direct('devTools'),'F12','developer'],
     ['내 Orbit 카드','card',openProfileCard,'›','card'],
+    ['다른 브라우저에서 가져오기','import',direct('importBookmarks'),'북마크','import'],
     ['도움말과 단축키','help',openHelp,'›','help'],
+    ['버전 및 업데이트','update',direct('checkUpdates'),'','updates'],
     ['검색·방문 기록','clock',openHistory,'','history'],
     ['비밀번호 관리자','lock',openPasswords,'','passwords'],
+    ['꾸미기','sparkles',openAppearance,'','appearance'],
     ['설정','settings',openSettings,'Ctrl ,','settings'],
     null,
+    ['분할 화면','split',direct('split'),'Ctrl Shift D','split'],
+    ['미니 플레이어','pip',direct('pip'),'','pip'],
     ['페이지에서 찾기','search',async()=>{await closeOverlay();openFind();},'Ctrl F','find'],
     ['인쇄','print',direct('print'),'Ctrl P','print'],
     ['PDF로 저장','save',direct('savePDF'),'Ctrl Shift P','pdf'],
@@ -69,7 +74,7 @@ function renderFavorites(){
   const favorites=state.favorites||[];$('favoritesSection').hidden=!favorites.length;
   reconcile($('favoritesGrid'),favorites,item=>item.id,item=>{
     const n=button('favorite-tile',item.title,null,()=>send('openFavorite',{id:item.id}));
-    n.dataset.favoriteId=item.id;n.addEventListener('contextmenu',event=>{event.preventDefault();openFavorites();});return n;
+    n.dataset.favoriteId=item.id;attachContextMenu(n,'favorite',item.id);return n;
   },(n,item)=>{
     n.title=item.title||siteName(item.url);n.setAttribute('aria-label',n.title);
     const key=item.url+'|'+(item.faviconURL||'');if(n.dataset.visual!==key){n.replaceChildren(favicon(item));n.dataset.visual=key;}
@@ -81,7 +86,7 @@ function renderFolders(tabs,makeTabNode,updateTabNode){
     const group=el('section','tab-folder');group.dataset.folderId=folder.id;
     const head=button('folder-heading',folder.name,null,()=>send('toggleFolder',{id:folder.id}));
     const arrow=el('span','folder-chevron'),name=el('span','folder-name'),count=el('span','folder-count');
-    head.append(arrow,icon('folder'),name,count);head.addEventListener('contextmenu',event=>{event.preventDefault();openFolderEditor(folder.id);});
+    head.append(arrow,icon('folder'),name,count);attachContextMenu(head,'folder',folder.id);
     const list=el('div','folder-tabs');group.append(head,list);group._parts={head,arrow,name,count,list};
     for(const type of ['dragenter','dragover'])head.addEventListener(type,event=>{if(event.dataTransfer?.types.includes('application/x-orbit-tab')){event.preventDefault();head.classList.add('drop-target');}});
     head.addEventListener('dragleave',()=>head.classList.remove('drop-target'));
@@ -93,14 +98,28 @@ function renderFolders(tabs,makeTabNode,updateTabNode){
     reconcile(p.list,children,tab=>tab.id,tab=>makeTabNode(tab,false),updateTabNode,true);
   });
 }
-async function openFolderEditor(id){
+async function openFolderEditor(id,tabId,stack=false){
   const folder=(state.folders||[]).find(entry=>entry.id===id);
   const epoch=await openOverlay('folder-editor');if(epoch!==overlayEpoch)return;
-  const {body}=dialog(folder?'폴더 관리':'새 폴더','함께 보고 싶은 탭을 한곳에 모아보세요.');
-  const label=el('label','field-label','폴더 이름'),input=el('input','text-input');input.id='folderNameInput';input.value=folder?.name||'';input.maxLength=60;input.placeholder='예: 매일 보는 사이트';label.htmlFor=input.id;body.append(label,input);
+  const noun=stack?'탭 그룹':'폴더';
+  const {body}=dialog(folder?noun+' 관리':'새 '+noun,'함께 보고 싶은 탭을 한곳에 모아보세요.');
+  const label=el('label','field-label',noun+' 이름'),input=el('input','text-input');
+  input.id='folderNameInput';input.value=folder?.name||'';input.maxLength=60;input.placeholder='예: 프로젝트 조사';
+  label.htmlFor=input.id;body.append(label,input);
+  const color=el('input','appearance-color');color.type='color';color.value=folder?.color||'#8795dc';
+  if(stack){const colorLabel=el('label','appearance-row','그룹 색상');colorLabel.append(color);body.append(colorLabel);}
   const actions=el('div','dialog-actions');
-  if(folder){const remove=button('secondary-button','폴더 삭제','trash',async()=>{await send('deleteFolder',{id});await closeOverlay();});remove.append(document.createTextNode('폴더만 삭제'));actions.append(remove);}
-  const save=button('primary-button','폴더 저장',null,async()=>{if(!input.value.trim()){input.focus();return;}await send(folder?'renameFolder':'createFolder',folder?{id,name:input.value}:{name:input.value});await closeOverlay();});save.textContent=folder?'저장':'만들기';actions.append(save);body.append(actions);input.addEventListener('keydown',event=>{if(event.key==='Enter')save.click();});input.focus();
+  if(folder){
+    const remove=button('secondary-button',stack?'그룹 해제':'폴더 삭제','trash',async()=>{if(await send('deleteFolder',{id}))await closeOverlay();});
+    remove.append(document.createTextNode(stack?'그룹 해제':'폴더만 삭제'));actions.append(remove);
+  }
+  const save=button('primary-button',noun+' 저장',null,async()=>{
+    if(!input.value.trim()){input.focus();return;}
+    const payload={id,tabId,name:input.value,...(stack?{color:color.value}:{})};
+    if(await send(folder?'renameFolder':'createFolder',payload))await closeOverlay();
+  });
+  save.textContent=folder?'저장':'만들기';actions.append(save);body.append(actions);
+  input.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();save.click();}});input.focus();
 }
 async function openTabLibrary(){
   const epoch=await openOverlay('tab-library');if(epoch!==overlayEpoch)return;
@@ -115,7 +134,7 @@ async function openTabLibrary(){
     for(const tab of state.tabs.filter(entry=>(entry.title+' '+entry.url).toLowerCase().includes(query))){
       const row=el('div','library-row'),open=button('library-open',tab.title,null,async()=>{await closeOverlay();if(tab.spaceId!==state.activeSpaceId)await send('switchSpace',{id:tab.spaceId});await send('activateTab',{id:tab.id});});
       const text=el('span','library-copy');text.append(el('strong','',tab.title||'새 탭'),el('small','',(state.spaces.find(space=>space.id===tab.spaceId)?.name||'')+' · '+siteName(tab.url)));open.append(favicon(tab),text);
-      row.append(open,button('icon-button','탭 관리','more',()=>openTabMenu(tab)));list.append(row);
+      attachContextMenu(open,'tab',tab.id);row.append(open,button('icon-button','탭 관리','more',()=>openTabMenu(tab)));list.append(row);
     }
   };input.addEventListener('input',draw);draw();input.focus();
 }
@@ -181,34 +200,162 @@ async function openHelp(){
 }
 
 async function openProfileCard(){
-  if(!state)return;const epoch=await openOverlay('card');if(epoch!==overlayEpoch)return;
-  const {body}=dialog('내 Orbit 카드','이 기기에 저장되는 나만의 작은 프로필.','card-dialog');
-  const layout=el('div','card-layout'),poster=el('div','card-poster'),canvas=document.createElement('canvas');canvas.id='orbitCardCanvas';canvas.width=800;canvas.height=1180;canvas.className='orbit-profile-card';canvas.setAttribute('aria-label','나의 Orbit 프로필 카드');poster.append(canvas);
-  const controls=el('div','card-controls'),label=el('label','field-label','표시 이름'),name=el('input','text-input'),taglabel=el('label','field-label','한 줄 소개'),tagline=el('input','text-input');
-  name.id='cardDisplayName';name.maxLength=40;name.value=state.profile?.displayName||'나';label.htmlFor=name.id;
-  tagline.id='cardTagline';tagline.maxLength=80;tagline.value=state.profile?.tagline||'나만의 궤도';taglabel.htmlFor=tagline.id;
-  const apply=async()=>{await send('profile',{displayName:name.value,tagline:tagline.value});drawProfileCard(canvas,state.profile);};
-  const save=button('primary-button','카드 PNG 저장','save',async()=>{await apply();await send('saveCard',{dataURL:canvas.toDataURL('image/png')});});save.append(document.createTextNode('이미지 저장'));
-  const copy=button('secondary-button','카드 이미지 복사','copy',async()=>{await apply();await send('copyCard',{dataURL:canvas.toDataURL('image/png')});});copy.append(document.createTextNode('복사'));
-  const shuffle=button('secondary-button','카드 모양 바꾸기','shuffle',async()=>{await send('profile',{cardSeed:((state.profile?.cardSeed||0)+1)%1000000});drawProfileCard(canvas,state.profile);});shuffle.append(document.createTextNode('다른 궤도'));
-  const actions=el('div','card-actions');actions.append(save,copy,shuffle);controls.append(label,name,taglabel,tagline,actions,el('p','settings-description','카드는 온라인 계정이나 공유 링크를 만들지 않습니다. 저장하거나 복사해 직접 공유할 수 있어요.'));
-  for(const input of [name,tagline])input.addEventListener('input',()=>drawProfileCard(canvas,{...state.profile,displayName:name.value,tagline:tagline.value}));
-  name.addEventListener('change',apply);tagline.addEventListener('change',apply);layout.append(poster,controls);body.append(layout);drawProfileCard(canvas,state.profile);
+  if(!state)return;
+  const epoch=await openOverlay('card');
+  if(epoch!==overlayEpoch)return;
+  const {body}=dialog('내 Orbit 카드','이름과 소개를 바꾸면 미리보기에 바로 반영됩니다.','card-dialog');
+  const layout=el('div','card-layout'),poster=el('figure','card-poster'),canvas=el('canvas','orbit-profile-card');
+  canvas.id='orbitCardCanvas';
+  canvas.width=800;
+  canvas.height=1180;
+  canvas.setAttribute('aria-label','나의 Orbit 프로필 카드');
+  poster.append(el('span','card-eyebrow','미리보기'),canvas,el('figcaption','','800 × 1180 · PNG'));
+
+  const controls=el('div','card-controls');
+  controls.append(el('h3','','프로필'));
+  function field(label,id,value,limit){
+    const caption=el('label','field-label',label),input=el('input','text-input');
+    input.id=id;input.maxLength=limit;input.value=value;caption.htmlFor=id;
+    controls.append(caption,input);
+    return input;
+  }
+  const name=field('표시 이름','cardDisplayName',state.profile?.displayName||'나',40);
+  const tagline=field('한 줄 소개','cardTagline',state.profile?.tagline||'나만의 궤도',80);
+  const preview=()=>drawProfileCard(canvas,{...state.profile,displayName:name.value,tagline:tagline.value});
+  async function apply(extra={}){
+    const result=await send('profile',{displayName:name.value,tagline:tagline.value,...extra});
+    if(result)preview();
+    return result;
+  }
+  function cardAction(style,label,text,glyph,handler){
+    const control=button(style,label,glyph,handler);
+    control.append(document.createTextNode(text));
+    return control;
+  }
+  const shuffle=cardAction('secondary-button card-style','카드 모양 바꾸기','다른 스타일','shuffle',
+    ()=>apply({cardSeed:((state.profile?.cardSeed||0)+1)%1000000}));
+  controls.append(shuffle);
+
+  const actions=el('div','card-actions');
+  const exportCard=action=>async()=>{
+    const saved=await apply();
+    if(!saved)return;
+    drawProfileCard(canvas,saved.profile);
+    await send(action,{dataURL:canvas.toDataURL('image/png')});
+  };
+  actions.append(
+    cardAction('primary-button','카드 PNG 저장','PNG 저장','save',exportCard('saveCard')),
+    cardAction('secondary-button','카드 이미지 복사','이미지 복사','copy',exportCard('copyCard'))
+  );
+  controls.append(actions,el('p','settings-description','카드는 이 기기에 저장됩니다. PNG로 저장하거나 복사해 공유할 수 있어요.'));
+  for(const input of [name,tagline]){
+    input.addEventListener('input',preview);
+    input.addEventListener('change',()=>apply());
+  }
+  layout.append(poster,controls);
+  body.append(layout);
+  preview();
 }
+
+const cardPalettes=[
+  {paper:'#f4f6ff',ink:'#192442',muted:'#566384',mid:'#323e8e',deep:'#111838',light:'#a5bbff',ribbon:'#b0a5ff',glint:'#f5c6e9'},
+  {paper:'#f1faf8',ink:'#143833',muted:'#496963',mid:'#256c69',deep:'#102d36',light:'#a9f2db',ribbon:'#79d1d2',glint:'#e5fff1'},
+  {paper:'#fff5f2',ink:'#45213e',muted:'#7c566d',mid:'#83426e',deep:'#361833',light:'#ffc3b6',ribbon:'#e18dce',glint:'#ffe2ca'},
+  {paper:'#f6f3ff',ink:'#292344',muted:'#635579',mid:'#50428c',deep:'#1e193a',light:'#d6baff',ribbon:'#8cafff',glint:'#e7dbff'},
+];
+const cardGraphemes=new Intl.Segmenter('ko',{granularity:'grapheme'});
+
+function cardTextLines(ctx,text,width){
+  const lines=[];
+  let line='';
+  for(const {segment} of cardGraphemes.segment(text)){
+    if(line&&ctx.measureText(line+segment).width>width){
+      lines.push(line.trimEnd());
+      line='';
+    }
+    if(line||segment.trim())line+=segment;
+  }
+  if(line)lines.push(line.trimEnd());
+  return lines;
+}
+
 function drawProfileCard(canvas,profile={}){
-  const ctx=canvas.getContext('2d'),seed=profile.cardSeed||0,w=canvas.width,h=canvas.height;
-  ctx.clearRect(0,0,w,h);ctx.fillStyle='#fffceb';ctx.beginPath();ctx.roundRect(0,0,w,h,28);ctx.fill();
-  ctx.save();ctx.beginPath();ctx.roundRect(52,52,696,650,14);ctx.clip();
-  const palette=[['#a2cefa','#8270d7','#f5a293'],['#90ded4','#446caf','#dbbbec'],['#f5c4a5','#e890b7','#4b70c8'],['#bfc5f5','#6854a5','#b1dcf0']][seed%4];
-  const bg=ctx.createLinearGradient(52,52,748,702);bg.addColorStop(0,palette[0]);bg.addColorStop(.5,palette[1]);bg.addColorStop(1,palette[2]);ctx.fillStyle=bg;ctx.fillRect(52,52,696,650);
-  ctx.globalAlpha=.45;ctx.fillStyle='#ffffff';ctx.beginPath();ctx.arc(180+(seed%5)*48,100,300,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
-  const ring=ctx.createLinearGradient(150,100,650,650);ring.addColorStop(0,'#fff9f3');ring.addColorStop(.38,'#ffadac');ring.addColorStop(.7,'#8a8dec');ring.addColorStop(1,'#273987');
-  ctx.strokeStyle=ring;ctx.lineWidth=116;ctx.lineCap='round';ctx.beginPath();ctx.ellipse(400,375,194,221,-.42,Math.PI*.16,Math.PI*1.98);ctx.stroke();
-  ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(400,375,193,222,-.42,Math.PI*.16,Math.PI*1.98);ctx.stroke();ctx.restore();
-  let size=66;ctx.fillStyle='#24384c';const name=profile.displayName||'나';do{ctx.font=`600 ${size}px "Segoe UI","Malgun Gothic",sans-serif`;if(ctx.measureText(name).width<690)break;size-=2;}while(size>22);
-  ctx.fillText(name,52,809);ctx.font='26px "Segoe UI","Malgun Gothic",sans-serif';ctx.fillStyle='#5e6d7a';const tagline=profile.tagline||'나만의 궤도';ctx.fillText(tagline.length>36?tagline.slice(0,35)+'…':tagline,52,859,690);
-  ctx.strokeStyle='#33485a';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(52,1073,340,42,7);ctx.stroke();ctx.fillStyle='#33485a';ctx.font='600 21px "Segoe UI",sans-serif';ctx.fillText('ORBIT',67,1101);
-  const joined=new Date(profile.joinedAt||Date.now());ctx.font='21px "Segoe UI",sans-serif';ctx.fillText(joined.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',timeZone:'Asia/Seoul'}),165,1101);ctx.font='600 25px "Segoe UI",sans-serif';ctx.textAlign='right';ctx.fillText('YOUR OWN',748,1090);ctx.fillText('ORBIT.',748,1121);ctx.textAlign='left';
+  const ctx=canvas.getContext('2d');
+  const palette=cardPalettes[(profile.cardSeed||0)%cardPalettes.length];
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.beginPath();
+  ctx.roundRect(0,0,800,1180,36);
+  ctx.fillStyle=palette.paper;
+  ctx.fill();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(38,38,724,613,28);
+  ctx.clip();
+  const field=ctx.createLinearGradient(38,38,762,651);
+  field.addColorStop(0,palette.mid);
+  field.addColorStop(1,palette.deep);
+  ctx.fillStyle=field;
+  ctx.fillRect(38,38,724,613);
+  const glow=ctx.createRadialGradient(363,300,25,363,300,345);
+  glow.addColorStop(0,palette.light+'69');
+  glow.addColorStop(1,palette.light+'00');
+  ctx.fillStyle=glow;
+  ctx.fillRect(38,38,724,613);
+
+  ctx.lineWidth=2;
+  ctx.strokeStyle='#ffffff35';
+  ctx.beginPath();
+  ctx.ellipse(400,352,272,125,-.54,0,Math.PI*2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(400,352,272,125,.39,0,Math.PI*2);
+  ctx.stroke();
+  const ribbon=ctx.createLinearGradient(235,198,569,530);
+  ribbon.addColorStop(0,'#fff');
+  ribbon.addColorStop(.48,palette.glint);
+  ribbon.addColorStop(1,palette.ribbon);
+  ctx.strokeStyle=ribbon;
+  ctx.lineWidth=44;
+  ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.ellipse(400,352,123,149,-.49,Math.PI*.27,Math.PI*2.04);
+  ctx.stroke();
+  ctx.fillStyle=palette.glint;
+  ctx.beginPath();
+  ctx.arc(611,211,7,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.font='700 23px "Segoe UI", sans-serif';
+  ctx.fillText('ORBIT',74,103);
+  ctx.font='500 18px "Segoe UI", sans-serif';
+  ctx.textAlign='right';
+  ctx.fillText('PROFILE',726,103);
+  ctx.restore();
+
+  const name=profile.displayName?.trim()||'나';
+  const tagline=profile.tagline?.trim()||'나만의 궤도';
+  const font='"Segoe UI Variable Text", "Segoe UI", "Malgun Gothic", sans-serif';
+  ctx.fillStyle=palette.ink;
+  for(let size=69;size>=30;size-=3){
+    ctx.font='650 '+size+'px '+font;
+    if(ctx.measureText(name).width<=664)break;
+  }
+  ctx.fillText(name,68,776,664);
+  ctx.font='32px '+font;
+  ctx.fillStyle=palette.muted;
+  cardTextLines(ctx,tagline,664).slice(0,4).forEach((line,index)=>ctx.fillText(line,68,842+index*42));
+
+  ctx.fillStyle=palette.muted+'40';
+  ctx.fillRect(68,1048,664,2);
+  ctx.fillStyle=palette.muted;
+  ctx.font='600 20px "Segoe UI", sans-serif';
+  ctx.fillText('ORBIT CARD',68,1106);
+  const joined=new Date(profile.joinedAt||Date.now());
+  ctx.textAlign='right';
+  ctx.font='20px "Segoe UI", sans-serif';
+  ctx.fillText(joined.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Seoul'}),732,1106);
+  ctx.textAlign='left';
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
@@ -236,4 +383,26 @@ async function openPasswords(){
   };search.addEventListener('input',refresh);refresh();body.append(el('p','settings-footnote','저장 계정은 스페이스별로 분리됩니다. 같은 HTTPS 사이트에 저장 계정이 하나면 빈 로그인 폼에 자동 입력합니다. 비밀번호 원문은 관리 화면·클립보드에 표시하지 않습니다.'));
 }
 
-async function openHistory(){if(!state)return;const epoch=await openOverlay('history');if(overlayKind!=='history'||epoch!==overlayEpoch)return;const {body}=dialog('검색·방문 기록','현재 스페이스에 저장한 최근 기록입니다.');if(state.incognito){body.append(el('p','settings-description','시크릿 창에서는 기록을 저장하거나 표시하지 않습니다.'));return;}const rows=(state.history||[]).filter(r=>r.spaceId===state.activeSpaceId);const clear=button('secondary-button','현재 스페이스 기록 모두 삭제','trash',async()=>{await send('clearHistory');await openHistory();});clear.append(document.createTextNode('모두 삭제'));body.append(clear);const list=el('div','password-list');if(!rows.length)list.append(el('p','settings-description','저장된 기록이 없습니다.'));for(const entry of rows){const row=el('div','library-row'),open=button('library-open',entry.title,null,async()=>{await closeOverlay();await send('navigate',{input:entry.value});});const copy=el('span','library-copy');copy.append(el('strong','',entry.title||entry.value),el('small','',(entry.kind==='search'?'검색 · ':'방문 · ')+entry.value));open.append(icon(entry.kind==='search'?'search':'clock'),copy);row.append(open,button('icon-button','기록 삭제','trash',async()=>{await send('deleteHistory',{kind:entry.kind,value:entry.value});await openHistory();}));list.append(row);}body.append(list);}
+async function openHistory(){
+  if(!state)return;
+  const epoch=await openOverlay('history');
+  if(overlayKind!=='history'||epoch!==overlayEpoch)return;
+  const {body}=dialog('검색·방문 기록','현재 스페이스에 저장한 최근 기록입니다.');
+  if(state.incognito){body.append(el('p','settings-description','시크릿 창에서는 기록을 저장하거나 표시하지 않습니다.'));return;}
+  const rows=(state.history||[]).filter(r=>r.spaceId===state.activeSpaceId);
+  const clear=button('secondary-button','현재 스페이스 기록 모두 삭제','trash',async()=>{await send('clearHistory');await openHistory();});
+  clear.append(document.createTextNode('모두 삭제'));body.append(clear);
+  const list=el('div','password-list');
+  if(!rows.length)list.append(el('p','settings-description','저장된 기록이 없습니다.'));
+  for(const entry of rows){
+    const row=el('div','library-row');
+    const open=button('library-open',entry.title,null,async()=>{await closeOverlay();await send('navigate',{input:entry.value});});
+    const copy=el('span','library-copy');
+    copy.append(el('strong','',entry.title||entry.value),el('small','',(entry.kind==='search'?'검색 · ':'방문 · ')+entry.value));
+    const image=entry.kind==='visit'?favicon({url:entry.value,faviconURL:entry.faviconURL}):icon('search');
+    open.append(image,copy);
+    row.append(open,button('icon-button','기록 삭제','trash',async()=>{await send('deleteHistory',{kind:entry.kind,value:entry.value});await openHistory();}));
+    list.append(row);
+  }
+  body.append(list);
+}

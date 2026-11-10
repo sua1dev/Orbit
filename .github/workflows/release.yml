@@ -51,6 +51,23 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/dist.cjs --check
 
+      - name: Provision the pinned Inno Setup compiler
+        run: |
+          $innoInstaller = Join-Path $env:RUNNER_TEMP 'innosetup-7.1.1-x64.exe'
+          $innoDirectory = Join-Path $env:RUNNER_TEMP 'orbit-inno'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe' -OutFile $innoInstaller
+          if ((Get-FileHash -LiteralPath $innoInstaller -Algorithm SHA256).Hash -ne '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0') {
+            throw 'The Inno Setup download did not match the expected hash.'
+          }
+          $innoSetup = Start-Process -FilePath $innoInstaller -ArgumentList @(
+            '/PORTABLE=1', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$innoDirectory`""
+          ) -WindowStyle Hidden -Wait -PassThru
+          $compiler = Join-Path $innoDirectory 'ISCC.exe'
+          if ($innoSetup.ExitCode -ne 0 -or !(Test-Path -LiteralPath $compiler -PathType Leaf)) {
+            throw 'Inno Setup compiler provisioning failed.'
+          }
+          "ORBIT_ISCC=$compiler" >> $env:GITHUB_ENV
+
       - name: Build the installer without publishing
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}

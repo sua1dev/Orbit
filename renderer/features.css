@@ -77,14 +77,7 @@
 .find-count { font-size:10px;white-space:nowrap;opacity:.55;padding:0 5px }
 .help-shortcut { display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 0;border-bottom:1px solid #e0e6dc;font-size:12px }
 .help-shortcut kbd { opacity:.6;font-size:10px;text-align:right }
-.card-dialog { width:790px }
-.card-layout { display:grid;grid-template-columns:minmax(250px,310px) minmax(200px,1fr);gap:36px;align-items:center }
-.card-poster { filter:drop-shadow(0 10px 18px #4b40631f) }
 .orbit-profile-card { width:100%;height:auto;display:block;border-radius:11px }
-.card-controls .field-label:first-child { margin-top:0 }
-.card-actions { display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 20px }
-.card-actions .primary-button { width:100% }
-.card-actions .secondary-button { flex:1 }
 .download-ring { position:relative;width:42px;height:42px;display:flex;align-items:center;justify-content:center }
 .download-ring>svg { position:absolute;inset:0;width:42px;height:42px;transform:rotate(-90deg);stroke-width:3;fill:none }
 .download-ring .ring-track { stroke:#e3e1ef }
@@ -94,5 +87,17 @@
 .download-ring.indeterminate>svg { animation:spin 1.4s linear infinite }
 .incognito-mode .brand-name::after { content:'시크릿';font-size:9px;letter-spacing:0;padding:4px 5px;background:#8579aa2c;border-radius:5px;margin-left:8px;vertical-align:middle }
 .collapsed.incognito-mode .brand-name::after { display:none }
-@media(max-width:1000px) { .card-dialog { width:680px }.card-layout { gap:22px;grid-template-columns:minmax(220px,270px) 1fr }.menu-row { height:36px } }
+@media(max-width:1000px) { .menu-row { height:36px } }
 @media(prefers-reduced-motion:reduce) { .favorite-tile:hover { transform:none }.download-ring.indeterminate>svg { animation:none } }
+.card-dialog { width: min(790px, 100%); }
+.card-layout { grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: clamp(16px, 4vw, 36px); align-items: start; }
+.card-poster { margin: 0; padding: 12px 14px 10px; display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); filter: none; }
+.card-eyebrow, .card-poster figcaption { color: var(--muted); font-size: 11px; }
+.card-poster figcaption { text-align: center; }
+.card-controls { display: grid; gap: 7px; min-width: 0; }
+.card-controls h3 { margin: 2px 0 6px; font-size: 16px; }
+.card-controls .field-label { margin: 7px 0 0; }
+.card-controls .card-style { justify-self: start; margin-top: 7px; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0 0; }
+.card-actions :is(.primary-button, .secondary-button) { flex: 1 1 auto; width: auto; min-height: 38px; justify-content: center; }
+.card-controls .settings-description { margin: 4px 0 0; }

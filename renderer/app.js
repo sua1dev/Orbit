@@ -20,12 +20,38 @@ const presets=['#c8d8cb','#d1d8e7','#e1cdd6','#e4d8c4','#cbc6de','#c7dcdc','#c7c
 
 function el(tag,className,text){const n=document.createElement(tag);if(className)n.className=className;if(text!==undefined)n.textContent=text;return n;}
 function button(className,label,iconName,handler){const n=el('button',className);n.setAttribute('aria-label',label);n.title=label;if(iconName)n.append(icon(iconName));if(handler)n.addEventListener('click',handler);return n;}
+function attachContextMenu(control, target, id) {
+  control.setAttribute('aria-keyshortcuts', 'Shift+F10');
+  const show = (x, y, keyboard = false) => {
+    bridge?.showChromeMenu({ target, id, x: Math.round(x), y: Math.round(y), keyboard })
+      .catch(error => showToast(error.message));
+  };
+  control.addEventListener('contextmenu', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    show(event.clientX, event.clientY);
+  });
+  control.addEventListener('keydown', event => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return;
+    const rect = control.getBoundingClientRect();
+    show(Math.max(0, Math.min(window.innerWidth - 1, rect.left + 8)),
+      Math.max(0, Math.min(window.innerHeight - 1, rect.bottom)), true);
+  });
+}
 function activeTab(){return state?.tabs.find(t=>t.id===state.activeTabId);}
 function paintSpace(node,space){const color=/^#[0-9a-f]{6}$/i.test(space?.color||'')?space.color:'#c8d8cb';if(node.dataset.color===color&&node.querySelector('img'))return;node.textContent='';node.classList.add('space-symbol');node.dataset.kind='orbit';node.dataset.color=color;const img=document.createElement('img');img.src=OrbitSpaceBrand.logo(color);img.alt='';img.draggable=false;node.append(img);}
 function currentSpace(){return state?.spaces.find(s=>s.id===state.activeSpaceId)||state?.spaces[0];}
 function isHome(tab){return !tab||!tab.url||tab.url==='orbit://newtab'||tab.url==='orbit://newtab/';}
 function siteName(url){try{return new URL(url).hostname.replace(/^www\./,'');}catch{return url||'새 탭';}}
-function prettyUrl(tab){if(tab?.url?.startsWith('orbit://')&&!isHome(tab))return tab.url;if(isHome(tab))return '새로운 가능성을 열어보세요';try{const u=new URL(tab.url);return u.hostname.replace(/^www\./,'')+(u.pathname==='/'?'':u.pathname)+u.search;}catch{return tab.url;}}
+function prettyUrl(tab){
+  if(isHome(tab))return '주소 또는 검색어 입력';
+  const url=URL.parse(tab.url);
+  if(!url||!['https:','http:'].includes(url.protocol))return tab.url;
+  return (url.protocol==='http:'?'http://':'')+url.host+(url.pathname==='/'?'':url.pathname)+url.search+url.hash;
+}
 
 async function send(name,payload={}){
   if(!bridge){showToast('앱을 실행하면 브라우저 기능을 사용할 수 있어요.');return null;}
@@ -89,22 +115,37 @@ function reconcile(container,items,key,create,update,animate=false){
 function replaceIcon(node,name){if(node.dataset.iconName!==name){node.replaceChildren(icon(name));node.dataset.iconName=name;}}
 
 const bundledSiteIcons={
-  'google.com':'sites/google.png','www.google.com':'sites/google.png',
-  'youtube.com':'sites/youtube.png','www.youtube.com':'sites/youtube.png','youtu.be':'sites/youtube.png',
-  'naver.com':'sites/naver.png','www.naver.com':'sites/naver.png',
-  'github.com':'sites/github.png','www.github.com':'sites/github.png'
+  'google.com':'sites/google.png',
+  'youtube.com':'sites/youtube.png','youtu.be':'sites/youtube.png','m.youtube.com':'sites/youtube.png',
+  'naver.com':'sites/naver.png','m.naver.com':'sites/naver.png',
+  'github.com':'sites/github.png',
+  'discord.com':'sites/discord.png','discord.gg':'sites/discord.png','discordapp.com':'sites/discord.png',
+  'canary.discord.com':'sites/discord.png','ptb.discord.com':'sites/discord.png',
+  'support.discord.com':'sites/discord.png','status.discord.com':'sites/discord.png'
 };
 function favicon(tab){
   const n=el('span','tab-favicon');n.setAttribute('aria-hidden','true');
   if(isHome(tab)||tab?.url?.startsWith('orbit://')){n.classList.add('favicon-orbit');n.append(el('span','orbit-mark'));return n;}
-  let host='';try{host=new URL(tab.url).hostname.toLowerCase();}catch{}
-  const fallback=bundledSiteIcons[host];
-  const source=tab.faviconURL||fallback;
-  if(source){
-    const image=el('img','site-icon');image.alt='';image.decoding='async';image.referrerPolicy='no-referrer';
-    image.addEventListener('error',()=>{if(fallback&&image.getAttribute('src')!==fallback){image.src=fallback;return;}image.remove();n.append(icon('globe'));},{once:false});
-    image.src=source;n.append(image);
-  }else n.append(icon('globe'));
+  const host=URL.parse(tab.url)?.hostname.replace(/^www\./,'')||'';
+  const fallback=Object.hasOwn(bundledSiteIcons,host)?bundledSiteIcons[host]:null;
+  const monogram=()=>{
+    if(!host){n.replaceChildren(icon('globe'));return;}
+    const letter=el('span','site-monogram',host.replace(/^\[/,'')[0]?.toUpperCase()||'•');
+    let hue=0;
+    for(const character of host)hue=(hue*31+character.charCodeAt(0))%360;
+    letter.style.setProperty('--site-hue',String(hue));
+    n.replaceChildren(letter);
+  };
+  // Legacy profiles can contain a remote URL. Keep list rendering local.
+  const saved=/^data:image\/(?:png|jpeg|x-icon|vnd\.microsoft\.icon|ico|webp);base64,/i.test(tab.faviconURL||'')?tab.faviconURL:null;
+  const sources=[...new Set([saved,fallback].filter(Boolean))];
+  if(!sources.length){monogram();return n;}
+  const image=el('img','site-icon');image.alt='';image.decoding='async';
+  image.addEventListener('error',()=>{
+    sources.shift();
+    if(sources.length)image.src=sources[0];else monogram();
+  });
+  image.src=sources[0];n.append(image);
   return n;
 }
 
@@ -113,18 +154,26 @@ function render(next){
   const space=currentSpace();
   const themeColor=space?.color||state.themeColor||'#c8d8cb';
   document.documentElement.style.setProperty('--theme',themeColor);
-  const channels=themeColor.slice(1).match(/.{2}/g)?.map(part=>parseInt(part,16))||[200,216,203];
-  $('app').classList.toggle('dark-chrome',channels[0]*.299+channels[1]*.587+channels[2]*.114<130);
+  renderAppearance(themeColor);
   $('app').classList.toggle('collapsed',!!state.sidebarCollapsed);
   $('spaceName').textContent=space?.name||'내 공간';
   paintSpace($('spaceGlyph'),space);
   $('spaceGlyph').style.background='transparent';
-  $('collapseButton').title=state.sidebarCollapsed?'사이드바 펼치기':'사이드바 접기';
+  const sideTabs=state.appearance?.tabPosition==='side';
+  $('collapseButton').setAttribute('aria-controls',sideTabs?'sidebar':'toolDock');
+  $('collapseButton').title=(sideTabs?'세로 탭 ':'도구 패널 ')+(state.sidebarCollapsed?'펼치기':'접기');
   $('collapseButton').setAttribute('aria-label',$('collapseButton').title);
-  renderTabs();renderSpaces();renderNavigation();renderPanes();renderDownloadBadge();renderFeatureUI();syncInternalPage();
+  $('collapseButton').setAttribute('aria-expanded',String(!state.sidebarCollapsed));
+  renderTabs();renderTopTabs();renderSpaces();renderNavigation();renderPanes();renderDownloadBadge();renderFeatureUI();syncInternalPage();
   if(overlayKind==='downloads')updateDownloads();
   if(state.notice&&state.notice!==lastNotice)showToast(state.notice);
   lastNotice=state.notice;
+}
+
+function closeVerticalTabButton(id) {
+  const close=button('tab-action','탭 닫기','close',event=>{event.stopPropagation();send('closeTab',{id});});
+  close.dataset.closeTab='';
+  return close;
 }
 
 function renderTabs(){
@@ -155,25 +204,24 @@ function renderTabs(){
     if(!pin){
       n.setAttribute('role','button');n.tabIndex=0;
       const title=el('span','tab-title'),actions=el('span','tab-actions');n._title=title;
-      actions.append(button('tab-action','탭 고정','pin',event=>{event.stopPropagation();send('pinTab',{id:tab.id});}),button('tab-action','탭 닫기','close',event=>{event.stopPropagation();send('closeTab',{id:tab.id});}));
+      actions.append(button('tab-action','탭 고정','pin',event=>{event.stopPropagation();send('pinTab',{id:tab.id});}),closeVerticalTabButton(tab.id));
       n.append(title,actions);n.addEventListener('click',()=>send('activateTab',{id:tab.id}));
       n.addEventListener('keydown',event=>{if(event.target===n&&(event.key==='Enter'||event.key===' ')){event.preventDefault();send('activateTab',{id:tab.id});}});
     }
     n.addEventListener('auxclick',event=>{if(event.button===1){event.preventDefault();send('closeTab',{id:tab.id});}});
-    n.addEventListener('contextmenu',event=>{event.preventDefault();const current=state.tabs.find(t=>t.id===tab.id);if(current)openTabMenu(current);});return n;
+    attachContextMenu(n,'tab',tab.id);return n;
   }
   function update(n,tab){
     const active=tab.id===state.activeTabId;
     n.classList.toggle('active',active);n.classList.toggle('in-split',state.splitTabIds?.includes(tab.id));
     n.title=tab.title||siteName(tab.url);n.setAttribute('aria-label',n.title+(active?', 현재 탭':''));n.setAttribute('aria-pressed',String(active));
     if(n._title)n._title.textContent=tab.title||'새 탭';
-    const visualKey=tab.loading?'loading':siteName(tab.url)+'|'+(tab.faviconURL||'');
-    if(n._visual.dataset.visual!==visualKey){n._visual.replaceChildren(tab.loading?el('span','loading-dot'):favicon(tab));n._visual.dataset.visual=visualKey;}
+    const visualKey=tab.url+'|'+(tab.faviconURL||'');
+    if(n._visual.dataset.visual!==visualKey){n._visual.replaceChildren(favicon(tab));n._visual.dataset.visual=visualKey;}
   }
   reconcile($('pinnedTabs'),pinned,t=>t.id,t=>make(t,true),update,true);
   reconcile($('tabList'),regular,t=>t.id,t=>make(t,false),update,true);
   renderFavorites();renderFolders(tabs,make,update);
-  $('sidebarHint').hidden=tabs.length>7;
 }
 
 function renderSpaces(){
@@ -188,7 +236,7 @@ function renderSpaces(){
 function renderNavigation(){
   const tab=activeTab();$('backButton').disabled=!tab?.canGoBack;$('forwardButton').disabled=!tab?.canGoForward;
   $('reloadButton').disabled=isHome(tab);$('reloadButton').classList.toggle('spinning',!!tab?.loading);
-  $('addressText').textContent=prettyUrl(tab);replaceIcon($('addressIcon'),isHome(tab)?'search':tab?.url?.startsWith('https:')?'lock':'globe');
+  $('addressText').textContent=prettyUrl(tab);$('addressButton').title=tab?.url&&!isHome(tab)?tab.url:'주소 또는 검색어 입력 (Ctrl + L)';replaceIcon($('addressIcon'),isHome(tab)?'search':tab?.url?.startsWith('https:')?'lock':'globe');
   const split=state.splitTabIds?.length===2;$('splitButton').classList.toggle('active',split);$('splitButton').setAttribute('aria-pressed',String(split));$('splitButton').title=split?'분할 화면 닫기':'분할 화면 열기';
   replaceIcon($('maximizeButton'),state.isMaximized?'restore':'maximize');$('maximizeButton').setAttribute('aria-label',state.isMaximized?'이전 크기로':'최대화');
   let track=$('pageLoadTrack');
@@ -207,32 +255,22 @@ function renderPanes(){
   const kind=tab=>isHome(tab)?'home':tab.url?.startsWith('orbit://')?tab.url:tab.error?'error':'external';
   reconcile($('workspaceSurface'),tabs,t=>t.id+':'+kind(t),tab=>{
     const pane=el('section','pane');pane.dataset.tabId=tab.id;
-    if(isHome(tab))pane.append(homePage(tab));
-    else if(tab.url?.startsWith('orbit://'))pane.append(internalPage(tab));
-    else if(tab.error)pane.append(errorPage(tab));
-    else{const loading=el('div','external-placeholder');loading.append(el('span','loading-dot'));pane.append(loading);}
-    enterMotion(pane,'pane-enter');return pane;
+    const content=el('div','pane-content');
+    if(isHome(tab))content.append(homePage(tab));
+    else if(tab.url?.startsWith('orbit://'))content.append(internalPage(tab));
+    else if(tab.error)content.append(errorPage(tab));
+    else{const loading=el('div','external-placeholder');loading.append(el('span','loading-dot'));content.append(loading);}
+    pane.append(createPaneHeader(tab.id),content);
+    if(kind(tab)!=='external')enterMotion(pane,'pane-enter');
+    return pane;
   },(pane,tab)=>{
     const index=tabs.indexOf(tab);pane.setAttribute('aria-label',split?(index+1)+'번째 웹페이지':'웹페이지');
     pane.classList.toggle('is-active',tab.id===state.activeTabId);
-    const corner=pane.querySelector('.home-corner');if(corner){let label=corner.querySelector('.home-space-label');if(label)label.textContent=currentSpace()?.name||'내 공간';}
+    updatePaneHeader(pane,tab,split);
+    const startPage=pane.querySelector('.seoul-start');if(startPage)updateHomeDials(startPage);
   });
-}
-
-function homePage(tab){
-  const page=el('div','home-page'), corner=el('div','home-corner');corner.append(el('span'),el('span','home-space-label',currentSpace()?.name||'내 공간'));
-  const content=el('div','home-content');content.append(el('p','home-eyebrow','A SPACE FOR YOUR EVERYDAY'));
-  const title=el('h1','home-title');title.append(document.createTextNode('조금 더 가볍게,'),document.createElement('br'),el('em','', '나만의 궤도로.'));
-  content.append(title,el('p','home-subtitle','어디로 향하고 싶으세요?\n아이디어도, 영감도. 여기서부터 시작하세요.'));
-  const search=button('home-search','주소 또는 검색어 입력',null,()=>openPalette(tab?.id));search.append(icon('search'),el('span','','검색어 또는 웹 주소를 입력하세요'),el('kbd','','Ctrl L'));content.append(search);
-  const quick=el('div','quick-links');
-  for(const [name,url] of [['Google','https://www.google.com'],['YouTube','https://www.youtube.com'],['네이버','https://www.naver.com'],['GitHub','https://github.com']]){
-    const link=button('quick-link',name,null,async()=>{if(tab?.id&&tab.id!==state.activeTabId)await send('activateTab',{id:tab.id});await send('newTab',{url});});link.append(favicon({url}),el('span','',name));quick.append(link);
-  }
-  content.append(quick);
-  const footer=el('footer','home-footer');footer.append(el('span','','Less noise. More space.'));
-  const customize=button('text-button','배경 색상 꾸미기',null,openSettings);customize.append(icon('sparkles'),document.createTextNode('내 공간 꾸미기'));footer.append(customize);
-  page.append(el('div','home-watermark'),corner,content,footer);return page;
+  renderWorkArea(split);
+  syncStartEnvironment();
 }
 
 function errorPage(tab){
@@ -315,15 +353,18 @@ function updatePalette(query){
   if(enabled&&trimmed)for(const r of internalRoutes){const url='orbit://'+r[0];if((url+' '+r[1]).toLowerCase().includes(trimmed.toLowerCase()))results.push({kind:'navigate',title:r[1],subtitle:'Orbit 내부 페이지 · '+url,value:url});}
   if(enabled){const used=new Set(results.map(r=>r.value||r.tab?.url));
     for(const entry of state.incognito?[]:(state.history||[]).filter(r=>r.spaceId===state.activeSpaceId&&(!trimmed||(r.title+' '+r.value).toLowerCase().includes(trimmed.toLowerCase()))).slice(0,6)){if(used.has(entry.value))continue;used.add(entry.value);results.push({kind:'navigate',title:entry.kind==='search'?entry.value:entry.title||siteName(entry.value),subtitle:entry.kind==='search'?'최근 검색':'방문 기록 · '+siteName(entry.value),value:entry.value,history:entry});}
-    if(trimmed)for(const [title,url,aliases] of [['YouTube','https://www.youtube.com/','유튜브 youtube'],['Google','https://www.google.com/','구글 google'],['네이버','https://www.naver.com/','네이버 naver'],['GitHub','https://github.com/','깃허브 github'],['Pinterest','https://www.pinterest.com/','핀터레스트 pinterest']]){if(used.has(url)||!((title+' '+url+' '+aliases).toLowerCase().includes(trimmed.toLowerCase())))continue;used.add(url);results.push({kind:'navigate',title,subtitle:'사이트 추천 · '+siteName(url),value:url});}
-    for(const item of state.favorites||[]){if(results.length>=12)break;if(used.has(item.url)||trimmed&&!(item.title+' '+item.url).toLowerCase().includes(trimmed.toLowerCase()))continue;used.add(item.url);results.push({kind:'navigate',title:item.title,subtitle:'즐겨찾기 · '+siteName(item.url),value:item.url});}
+    if(trimmed)for(const [title,url,aliases] of [['YouTube','https://www.youtube.com/','유튜브 youtube'],['Google','https://www.google.com/','구글 google'],['네이버','https://www.naver.com/','네이버 naver'],['GitHub','https://github.com/','깃허브 github'],['Discord','https://discord.com/','디스코드 discord'],['Pinterest','https://www.pinterest.com/','핀터레스트 pinterest']]){if(used.has(url)||!((title+' '+url+' '+aliases).toLowerCase().includes(trimmed.toLowerCase())))continue;used.add(url);results.push({kind:'navigate',title,subtitle:'사이트 추천 · '+siteName(url),value:url});}
+    for(const item of state.favorites||[]){if(results.length>=12)break;if(used.has(item.url)||trimmed&&!(item.title+' '+item.url).toLowerCase().includes(trimmed.toLowerCase()))continue;used.add(item.url);results.push({kind:'navigate',title:item.title,subtitle:'즐겨찾기 · '+siteName(item.url),value:item.url,site:item});}
     for(const value of paletteRemote){if(used.has(value))continue;used.add(value);results.push({kind:'navigate',title:value,subtitle:'Google 추천 검색어',value});}
   }
   if(enabled&&!trimmed)for(const [title,url] of [['YouTube','https://www.youtube.com'],['Google','https://www.google.com']])results.push({kind:'navigate',title,subtitle:siteName(url),value:url});
   paletteResults=results;const container=$('paletteResults');if(!container)return;container.replaceChildren(el('div','palette-label',trimmed?'어디로 가볼까요?':'바로 시작하기'));
   results.forEach((result,index)=>{
     const n=button('palette-result'+(index===paletteIndex?' selected':''),result.title,null,()=>choosePalette(index));n.id=`palette-result-${index}`;n.setAttribute('role','option');n.setAttribute('aria-selected',String(index===paletteIndex));
-    const thumb=el('span','result-icon');thumb.append(result.tab?favicon(result.tab):icon(result.history?'clock':result.value&&looksLikeUrl(result.value)?'globe':'search'));
+    const thumb=el('span','result-icon');
+    const site=result.tab||result.site||(result.history?.kind==='visit'?{url:result.value,faviconURL:result.history.faviconURL}:
+      !result.history&&/^(?:https?|orbit):\/\//i.test(result.value||'')?{url:result.value}:null);
+    thumb.append(site?favicon(site):icon(result.value&&looksLikeUrl(result.value)?'globe':'search'));
     const text=el('span','result-content');text.append(el('strong','',result.title),el('small','',result.subtitle));n.append(thumb,text,icon(result.kind==='tab'?'arrow':'enter'));container.append(n);
   });$('paletteInput')?.setAttribute('aria-activedescendant',`palette-result-${paletteIndex}`);
 }
@@ -337,28 +378,79 @@ async function choosePalette(index){
 }
 
 async function openSettings(){
-  if(!state)return;const epoch=await openOverlay('settings');if(overlayKind!=='settings'||epoch!==overlayEpoch)return;
-  const {body}=dialog('내 공간 꾸미기','작은 취향까지 담아, 오래 머물고 싶은 브라우저로.');
-  const browserSection=el('section','settings-section setting-toggle-row'),browserCopy=el('div');
-  browserCopy.append(el('span','settings-label','기본 브라우저'),el('p','settings-description',state.packaged?'다른 앱의 웹 링크도 Orbit으로 열어보세요.':'설치 버전에서 Windows 기본 앱으로 선택할 수 있어요.'));
-  const defaultButton=button('secondary-button','Windows 기본 브라우저 설정',null,()=>send('defaultBrowserSettings'));defaultButton.textContent='설정 열기';defaultButton.disabled=!state.packaged;browserSection.append(browserCopy,defaultButton);
-  const colorSection=el('section','settings-section');colorSection.append(el('span','settings-label','브라우저 색상'),el('p','settings-description','오늘의 기분에 맞는 색을 골라보세요.'));
-  const themeColor=currentSpace()?.color||state.themeColor||presets[0];
-  const colors=el('div','color-presets');presets.forEach(color=>{const swatch=button('color-swatch'+(themeColor===color?' active':''),`배경색 ${color}`,null,()=>{send('theme',{color});updateColors(color);});swatch.style.setProperty('--swatch',color);swatch.dataset.color=color;colors.append(swatch);});
-  const custom=el('label','color-custom'),picker=el('input','color-input');picker.type='color';picker.value=themeColor;picker.setAttribute('aria-label','사용자 지정 배경색');picker.id='themeColorInput';const code=el('span','color-code',picker.value);code.id='themeColorCode';
-  picker.addEventListener('input',()=>{send('theme',{color:picker.value});updateColors(picker.value);});custom.append(picker,el('span','','직접 선택'),code);colorSection.append(colors,custom);
-  const pip=el('section','settings-section setting-toggle-row'),pipCopy=el('div');pipCopy.append(el('span','settings-label','YouTube 자동 미니 플레이어'),el('p','settings-description','재생 중인 YouTube를 벗어나거나 다른 앱으로 이동하면, 영상을 항상 위에 떠 있는 창에서 이어 봅니다.'));
-  const toggle=button('toggle','YouTube 자동 Picture-in-Picture',null,()=>{const enabled=toggle.getAttribute('aria-checked')!=='true';toggle.setAttribute('aria-checked',String(enabled));send('autoPip',{enabled});});toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(state.autoPip!==false));pip.append(pipCopy,toggle);
-  const searchSection=el('section','settings-section');searchSection.append(el('span','settings-label','검색과 자동완성'));
-  for(const [key,label,description] of [['autocomplete','주소창 자동완성','방문 사이트, 최근 검색, 열린 탭과 즐겨찾기를 추천합니다.'],['saveHistory','검색·방문 기록 저장','이 기기에 최대 500개 기록을 보관하고 스페이스별로 표시합니다. 시크릿 창은 제외됩니다.'],['onlineSuggestions','Google 추천 검색어','켜면 주소창에 입력하는 검색어를 Google에 전송해 추천을 받습니다. 기본값은 꺼짐입니다.']]){const row=el('div','setting-toggle-row'),copy=el('div');copy.append(el('span','settings-label',label),el('p','settings-description',description));const toggle=button('toggle',label,null,async()=>{const enabled=toggle.getAttribute('aria-checked')!=='true';const result=await send('searchPreferences',{[key]:enabled});if(result)toggle.setAttribute('aria-checked',String(result.searchPreferences[key]));});toggle.setAttribute('role','switch');toggle.setAttribute('aria-checked',String(state.searchPreferences?.[key]??(key!=='onlineSuggestions')));toggle.disabled=state.incognito;row.append(copy,toggle);searchSection.append(row);}
-  const historyButton=button('secondary-button','검색·방문 기록 관리','clock',openHistory);historyButton.append(document.createTextNode('기록 보기·삭제'));searchSection.append(historyButton);body.append(searchSection);
-  const passwords=button('secondary-button','비밀번호 관리자','lock',openPasswords);passwords.append(document.createTextNode('비밀번호 관리자'));body.append(passwords);
-  const dataSection=el('section','settings-section');dataSection.append(el('span','settings-label','개인정보와 사이트 데이터'),el('p','settings-description','탭과 사이트 데이터는 이 기기에 저장됩니다. 필요한 경우 현재 스페이스의 쿠키와 캐시를 삭제할 수 있어요.'));
-  const controls=el('div','dialog-actions');controls.style.justifyContent='flex-start';
-  const privacy=button('secondary-button','개인정보 및 업데이트 안내',null,openAppInfo);privacy.textContent='개인정보 및 앱 정보';
-  const clear=button('secondary-button','현재 스페이스 사이트 데이터 삭제',null,()=>send('clearSiteData'));clear.textContent='사이트 데이터 삭제';controls.append(privacy,clear);dataSection.append(controls);
-  const footer=el('div','settings-footnote','Orbit 베타 · 스페이스마다 로그인과 쿠키가 분리됩니다.');
-  const version=el('div','version-line');version.append(el('span','orbit-mark'),document.createTextNode(`Orbit ${state.version||'0.2.0-beta.1'}`));footer.append(version);body.append(browserSection,colorSection,pip,dataSection,footer);
+  if(!state)return;
+  const epoch=await openOverlay('settings');
+  if(overlayKind!=='settings'||epoch!==overlayEpoch)return;
+  const {body}=dialog('설정','브라우저 모양, 새 탭 페이지, 검색과 개인정보를 관리하세요.','settings-dialog');
+  const customize=button('settings-appearance-link','꾸미기 열기',null,openAppearance);
+  customize.append(icon('sparkles'),el('span','','꾸미기'),el('small','','탭 배치 · 테마 · 도구 모음 · 시작 페이지'),icon('chevronRight'));
+  body.append(customize);
+
+  function section(title){
+    const node=el('section','settings-panel');
+    node.append(el('h3','settings-panel-heading',title));
+    body.append(node);
+    return node;
+  }
+  function row(label,description,control){
+    const node=el('div','settings-panel-row'),copy=el('div');
+    copy.append(el('strong','',label),el('p','settings-description',description));
+    node.append(copy,control);
+    return node;
+  }
+  function toggle(label,checked,change,disabled=false){
+    const control=button('toggle',label,null,async()=>{
+      const next=await change(control.getAttribute('aria-checked')!=='true');
+      if(typeof next==='boolean')control.setAttribute('aria-checked',String(next));
+    });
+    control.setAttribute('role','switch');
+    control.setAttribute('aria-checked',String(checked));
+    control.disabled=disabled;
+    return control;
+  }
+  function labeledAction(label,accessibleLabel,glyph,handler){
+    const control=button('secondary-button',accessibleLabel,glyph,handler);
+    control.append(document.createTextNode(label));
+    return control;
+  }
+  function actions(parent,...controls){
+    const group=el('div','settings-panel-actions');
+    group.append(...controls);
+    parent.append(group);
+  }
+
+  const search=section('검색과 자동완성');
+  for(const [key,label,description] of [
+    ['autocomplete','주소창 자동완성','방문 사이트, 최근 검색, 열린 탭과 즐겨찾기를 추천합니다.'],
+    ['saveHistory','검색·방문 기록 저장','이 기기에 최대 500개 기록을 보관하고 스페이스별로 표시합니다.'],
+    ['onlineSuggestions','Google 추천 검색어','주소창에 입력하는 검색어를 Google에 전송해 추천을 받습니다.'],
+  ]){
+    const control=toggle(label,state.searchPreferences?.[key]??(key!=='onlineSuggestions'),async enabled=>{
+      const result=await send('searchPreferences',{[key]:enabled});
+      return result?.searchPreferences[key];
+    },state.incognito);
+    search.append(row(label,description,control));
+  }
+  actions(search,labeledAction('기록 보기·삭제','검색·방문 기록 관리','clock',openHistory));
+
+  const browser=section('기본 브라우저');
+  const defaultButton=labeledAction('설정 열기','Windows 기본 앱 설정',null,()=>send('defaultBrowserSettings'));
+  defaultButton.disabled=!state.packaged;
+  browser.append(row('Windows 기본 앱',state.packaged?'웹 링크와 HTML·PDF·SVG·WebP·XML 파일을 Orbit으로 열 수 있습니다.':'설치 버전에서 Windows 기본 앱으로 선택할 수 있어요.',defaultButton));
+
+  const playback=section('미디어');
+  playback.append(row('YouTube 자동 미니 플레이어','YouTube에서 다른 탭이나 앱으로 이동할 때, 영상을 떠 있는 창에서 이어 봅니다.',
+    toggle('YouTube 자동 Picture-in-Picture',state.autoPip!==false,async enabled=>(await send('autoPip',{enabled}))?.autoPip)));
+
+  const privacy=section('개인정보와 사이트 데이터');
+  privacy.append(el('p','settings-description','로그인과 쿠키는 이 기기에 저장되며 스페이스별로 분리됩니다.'));
+  actions(privacy,
+    labeledAction('비밀번호 관리자','비밀번호 관리자','lock',openPasswords),
+    labeledAction('앱 정보','개인정보 및 업데이트 안내','info',openAppInfo),
+    labeledAction('사이트 데이터 삭제','현재 스페이스 사이트 데이터 삭제',null,()=>send('clearSiteData')));
+  const version=el('div','version-line settings-version');
+  version.append(el('span','orbit-mark'),document.createTextNode('Orbit '+(state.version||'')));
+  body.append(version);
 }
 async function openAppInfo(){
   if(!state)return;const epoch=await openOverlay('app-info');if(overlayKind!=='app-info'||epoch!==overlayEpoch)return;
@@ -367,13 +459,12 @@ async function openAppInfo(){
     ['내 기기에 보관되는 데이터','열린 탭의 주소·제목, 스페이스, 색상 설정과 사이트 쿠키·캐시는 이 기기에 저장됩니다. 스페이스별로 로그인 저장소가 분리됩니다.'],
     ['사이트에 전달되는 정보','Orbit 자체는 분석·광고·오류 업로드 서버를 운영하지 않습니다. 웹사이트를 방문하면 해당 사이트로 요청이 전달되며, 검색어를 입력하면 Google 검색으로 전달됩니다.'],
     ['데이터 삭제와 앱 제거','설정의 사이트 데이터 삭제는 현재 스페이스의 쿠키·캐시를 지우고 로그아웃합니다. 앱을 제거해도 브라우저 데이터와 다운로드한 파일은 보관합니다.'],
-    ['업데이트','새 설치 파일을 실행하면 탭과 설정을 유지하며 업데이트합니다. 이 베타는 수동 업데이트 방식입니다.'],
-    ['현재 지원 범위','Windows x64용 베타입니다. 비밀번호는 현재 기기에서 Windows 암호화로 저장하고 스페이스별로 관리합니다. 압축을 푼 확장은 일부 Chrome 확장 API를 지원합니다. Chrome 웹 스토어 전체 호환과 기기 간 동기화는 아직 제공하지 않습니다.']
+    ['업데이트','새 설치 파일을 실행하면 탭과 설정을 유지하며 업데이트합니다. 수동 업데이트 방식입니다.'],
+    ['현재 지원 범위','Windows x64용입니다. 비밀번호는 현재 기기에서 Windows 암호화로 저장하고 스페이스별로 관리합니다. 압축을 푼 확장은 일부 Chrome 확장 API를 지원합니다. Chrome 웹 스토어 전체 호환과 기기 간 동기화는 아직 제공하지 않습니다.']
   ];
   for(const [title,text] of sections){const section=el('section','settings-section');section.append(el('span','settings-label',title),el('p','settings-description',text));body.append(section);}
   body.append(el('p','settings-footnote',`Orbit ${state.version||'0.2.0-beta.1'} · Chromium ${state.engine?.chromium||'—'}`));
 }
-function updateColors(color){document.querySelectorAll('.color-swatch').forEach(n=>n.classList.toggle('active',n.dataset.color===color));if($('themeColorCode'))$('themeColorCode').textContent=color;if($('themeColorInput'))$('themeColorInput').value=color;}
 
 async function openSpaces(){
   if(!state)return;const epoch=await openOverlay('spaces');if(overlayKind!=='spaces'||epoch!==overlayEpoch)return;
@@ -465,13 +556,19 @@ function updateDownloads(){
   });
 }
 
-async function newTab(){await send('newTab');await openPalette();}
+async function newTab(forceSearch = false){
+  if(!await send('newTab'))return;
+  if(forceSearch === true || state?.appearance?.focusNewTab)await openPalette();
+}
 $('homeButton').addEventListener('click',openAppMenu);
+$('topLogo').addEventListener('click',openAppMenu);
+bindTopTabs();
 $('collapseButton').addEventListener('click',()=>send('toggleSidebar'));
 $('newTabButton').addEventListener('click',newTab);
 $('spaceSelector').addEventListener('click',openSpaces);$('addSpaceButton').addEventListener('click',()=>openSpaceEditor());
 $('settingsButton').addEventListener('click',openSettings);$('downloadsButton').addEventListener('click',openDownloads);
 $('addressButton').addEventListener('click',()=>openPalette());$('backButton').addEventListener('click',()=>send('back'));$('forwardButton').addEventListener('click',()=>send('forward'));$('reloadButton').addEventListener('click',()=>send('reload'));
+attachContextMenu($('addressButton'),'address');
 $('splitButton').addEventListener('click',()=>send(state?.splitTabIds?.length===2?'unsplit':'split'));$('pipButton').addEventListener('click',()=>send('pip'));
 $('minimizeButton').addEventListener('click',()=>send('minimize'));$('maximizeButton').addEventListener('click',()=>send('maximize'));$('closeButton').addEventListener('click',()=>send('closeWindow'));
 $('dismissToast').addEventListener('click',hideToast);
@@ -480,7 +577,7 @@ document.addEventListener('keydown',event=>{
   if(event.key==='Escape'&&overlayKind){event.preventDefault();closeOverlay();return;}
   if(overlayKind){if(event.key==='Tab'){const focusable=[...$('overlay').querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length),first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}return;}
   if(event.ctrlKey&&!event.shiftKey&&event.key.toLowerCase()==='l'){event.preventDefault();openPalette();}
-  else if(event.ctrlKey&&!event.shiftKey&&event.key.toLowerCase()==='t'){event.preventDefault();newTab();}
+  else if(event.ctrlKey&&!event.shiftKey&&event.key.toLowerCase()==='t'){event.preventDefault();newTab(true);}
   else if(event.ctrlKey&&event.key.toLowerCase()==='w'){event.preventDefault();if(state?.activeTabId)send('closeTab',{id:state.activeTabId});}
   else if(event.ctrlKey&&event.key.toLowerCase()==='r'){event.preventDefault();send('reload');}
   else if(event.ctrlKey&&event.shiftKey&&event.key.toLowerCase()==='d'){event.preventDefault();send(state?.splitTabIds?.length===2?'unsplit':'split');}
@@ -491,10 +588,12 @@ if(bridge){
   const syncMotion=()=>send('motionPreference',{reduced:motionQuery.matches});
   motionQuery.addEventListener('change',syncMotion);
   syncMotion();
-  bridge.onCommand(command=>{if(command==='new-tab')newTab();else if(command==='focus-address')openPalette();else if(command==='settings')openSettings();else if(command==='downloads')openDownloads();else if(command==='close-overlay')closeOverlay();else if(command==='find'){if(overlayKind||closingOverlay)closeOverlay().then(openFind);else openFind();}else if(command==='menu')openAppMenu();else if(command==='archives')openArchives();else if(command==='card')openProfileCard();else if(command==='favorites')openFavorites();else if(command==='folders'||command==='tabs')openTabLibrary();else if(command==='extensions')openExtensions();});
+  bridge.onCommand((command,payload)=>{if(command==='new-tab')newTab(true);else if(command==='focus-address')openPalette();else if(command==='settings')openSettings();else if(command==='downloads')openDownloads();else if(command==='close-overlay')closeOverlay();else if(command==='find'){if(overlayKind||closingOverlay)closeOverlay().then(openFind);else openFind();}else if(command==='menu')openAppMenu();else if(command==='archives')openArchives();else if(command==='card')openProfileCard();else if(command==='favorites')openFavorites();else if(command==='folders'||command==='tabs')openTabLibrary();else if(command==='extensions')openExtensions();else if(command==='favorite-editor')openDialEditor(payload.id);else if(command==='folder-editor')openFolderEditor(payload.id);else if(command==='stack-editor')openFolderEditor(payload.id,payload.tabId,true);});
   bridge.getState().then(render).catch(()=>showToast('브라우저를 시작하지 못했어요. 앱을 다시 실행해 주세요.'));
 } else {
   $('workspaceSurface').append(homePage());
+  updateHomeDials(document.querySelector('.seoul-start'));
+  syncStartEnvironment();
   showToast('Orbit 앱에서 실행하면 웹 탐색을 시작할 수 있어요.');
 }
 

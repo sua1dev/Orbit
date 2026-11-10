@@ -1434,7 +1434,7 @@ kbd {
   padding:0;
   justify-content:center
 }
-.collapsed .brand-name,.collapsed .collapse-button,.collapsed .space-label,.collapsed .space-chevron,.collapsed .new-tab-button>span:nth-child(2),.collapsed .new-tab-button kbd,.collapsed .section-label,.collapsed .tab-title,.collapsed .tab-actions,.collapsed .sidebar-hint,.collapsed .utility-button>span:nth-child(2) {
+.collapsed .brand-name,.collapsed .space-label,.collapsed .space-chevron,.collapsed .new-tab-button>span:nth-child(2),.collapsed .new-tab-button kbd,.collapsed .section-label,.collapsed .tab-title,.collapsed .tab-actions,.collapsed .sidebar-hint,.collapsed .utility-button>span:nth-child(2) {
   display:none
 }
 .collapsed .space-selector {

@@ -186,8 +186,8 @@ function assertNoPrivateMarkers(files) {
     await fixtureDialogs();
 
     await check('Home uses actual site image assets and controls use vector icons', async () => {
-      await eventually(() => ui.locator('.quick-link img, .quick-links img, .quick-links .site-icon img').count(), count => count >= 4, 'four site icon images');
-      const icons = await ui.locator('.quick-link img, .quick-links img, .quick-links .site-icon img').evaluateAll(nodes => nodes.map(node => ({ source: node.getAttribute('src'), loaded: node.complete && node.naturalWidth > 0 })));
+      await eventually(() => ui.locator('.start-tile img').count(), count => count >= 4, 'four site icon images');
+      const icons = await ui.locator('.start-tile img').evaluateAll(nodes => nodes.map(node => ({ source: node.getAttribute('src'), loaded: node.complete && node.naturalWidth > 0 })));
       assert.ok(icons.every(icon => icon.loaded));
       assert.ok(icons.some(icon => /google/i.test(icon.source)));
       assert.ok(icons.some(icon => /youtube/i.test(icon.source)));
