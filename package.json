@@ -1,7 +1,7 @@
 {
   "name": "orbit-browser",
   "productName": "Orbit",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "description": "A Chromium-powered browser with spaces, vertical tabs and automatic picture in picture.",
   "main": "main.cjs",
   "private": true,
@@ -27,6 +27,7 @@
     "test:site-buttons": "node tests/site-buttons.cjs",
     "test:start-page": "node tests/start-page.cjs",
     "test:work-area": "node tests/work-area.cjs",
+    "test:tab-search": "node tests/tab-search.cjs",
     "test:login-restart": "node tests/login-restart.cjs",
     "test:local-documents": "node tests/local-documents.cjs",
     "test:context-menu": "node tests/web-context-menu.cjs && node tests/chrome-context-menu.cjs"

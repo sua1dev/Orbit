@@ -434,6 +434,7 @@ function bindShortcuts(wc, panel = false) {
     const consume = fn => { event.preventDefault(); Promise.resolve().then(fn).catch(error => notify(error.message)); };
     if (mod && key === 'n') return consume(() => handleAction(input.shift ? 'newIncognitoWindow' : 'newWindow'));
     if (mod && key === 't' && input.shift) return consume(() => handleAction('reopenTab'));
+    if (mod && input.shift && !input.alt && key === 'a') return consume(() => command('tab-search'));
     if (mod && key === 'f') return consume(() => command('find'));
     if (mod && key === 'p') return consume(() => handleAction(input.shift ? 'savePDF' : 'print'));
     if (mod && key === 'd') return consume(() => handleAction(input.shift ? 'split' : 'favoriteTab', { id: state.activeTabId }));
@@ -730,6 +731,7 @@ async function activateTab(tab) {
   const old = currentTab();
   if (old?.id !== tab.id && !state.splitTabIds.includes(tab.id)) await enterPip(old);
   tab = tabById(tab.id);if (!tab) return;
+  if (tab.spaceId !== state.activeSpaceId) state.splitTabIds = [];
   if (state.splitTabIds.length && !state.splitTabIds.includes(tab.id)) {
     const index = state.splitTabIds.indexOf(state.activeTabId); state.splitTabIds[index < 0 ? 0 : index] = tab.id;
   }
@@ -1153,8 +1155,23 @@ async function performAction(name, payload = {}) {
       else await activateTab(target);
       break;
     }
+    case 'duplicateTab': {
+      const source = tabById(payload.id);
+      if (!source || !isWebURL(source.url)) break;
+      const duplicate = makeTab(source.url, source.spaceId);
+      duplicate.title = source.title;
+      duplicate.faviconURL = safeRasterFaviconURL(source.faviconURL);
+      duplicate.folderId = source.folderId;
+      duplicate.pinned = source.pinned;
+      state.tabs.pop();
+      state.tabs.splice(state.tabs.indexOf(source) + 1, 0, duplicate);
+      await activateTab(duplicate);
+      break;
+    }
     case 'activateTab': {
-      const target = tabById(payload.id); if (target && target.spaceId === state.activeSpaceId) await activateTab(target); break;
+      const target = tabById(payload.id);
+      if (target && (target.spaceId === state.activeSpaceId || payload.acrossSpaces === true)) await activateTab(target);
+      break;
     }
     case 'closeTab': {
       const target = tabById(payload.id); if (!target) break;
@@ -1345,7 +1362,7 @@ async function performAction(name, payload = {}) {
     default: throw new Error('Unknown action');
   }
   layout();
-  if (win?.isFocused() && ['activateTab', 'switchSpace', 'split', 'unsplit', 'replaceSplitTab', 'newTab'].includes(name)) await restorePipIfVisible();
+  if (win?.isFocused() && ['activateTab', 'switchSpace', 'split', 'unsplit', 'replaceSplitTab', 'newTab', 'reopenTab', 'duplicateTab'].includes(name)) await restorePipIfVisible();
   publish(); return snapshot();
 }
 

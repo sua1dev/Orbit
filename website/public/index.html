@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Orbit은 스페이스, 세로 탭, 분할 화면, 서울의 날씨를 담은 시작 페이지를 갖춘 Windows 브라우저입니다.">
+  <meta name="theme-color" content="#f8f4ee">
+  <meta property="og:title" content="Orbit 브라우저">
+  <meta property="og:description" content="탭을 정리하고, 내 방식대로 둘러보는 Windows 브라우저.">
+  <meta property="og:image" content="https://orbit.intro-us.xyz/assets/seoul-night.jpg">
+  <link rel="canonical" href="https://orbit.intro-us.xyz/">
+  <link rel="icon" type="image/svg+xml" href="/assets/orbit.svg">
+  <link rel="stylesheet" href="/style.css">
+  <title>Orbit — 내 방식대로 쓰는 브라우저</title>
+  <script src="/preview.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">본문으로 건너뛰기</a>
+  <header class="site-header shell">
+    <a class="wordmark" href="/" aria-label="Orbit 홈"><img src="/assets/orbit.svg" alt="" width="34" height="34">Orbit</a>
+    <nav aria-label="페이지 메뉴">
+      <a href="#features">기능</a>
+      <a href="#download">다운로드</a>
+      <a href="https://github.com/sua1dev/Orbit">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero shell" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="platform">Windows용 Chromium 브라우저</p>
+        <h1 id="hero-title">내 방식대로<br><em>브라우징.</em></h1>
+        <div class="hero-intro">
+          <p>일과 일상을 스페이스로 나누고, 필요한 탭을 빠르게 찾으세요. 탭의 위치부터 새 탭의 배경까지 원하는 대로 꾸밀 수 있어요.</p>
+          <a class="primary" href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/Orbit-Setup-__ORBIT_VERSION__-x64.exe">Windows용 다운로드 <span aria-hidden="true">↓</span></a>
+          <a class="small-link" href="#download">Orbit __ORBIT_VERSION__ · x64 · 설치 안내</a>
+        </div>
+      </div>
+
+      <figure class="demo" id="preview">
+        <div class="demo-stage">
+          <div class="browser-demo" role="img" aria-label="Orbit 새 탭 화면 미리보기. 왼쪽 세로 탭과 남산 배경, 가운데 시계와 검색창이 보입니다.">
+            <div class="mock-top" aria-hidden="true">
+              <img src="/assets/orbit.svg" alt="" width="18" height="18"><span class="mock-top-name">Orbit</span>
+              <span class="mock-address">⌕ <span>주소 또는 검색어 입력</span><kbd>Ctrl L</kbd></span>
+              <span class="mock-window">− □ ×</span>
+            </div>
+            <div class="mock-body" aria-hidden="true">
+              <div class="mock-sidebar">
+                <span class="mock-space"><span>◈</span> 시작의 궤도 <span>⌄</span></span>
+                <span class="mock-new">＋ 새 탭</span>
+                <span class="mock-label">열린 탭</span>
+                <span class="mock-tab current"><span>⊞</span> 새 탭</span>
+                <span class="mock-tab"><span>◉</span> 서울 여행 지도</span>
+                <span class="mock-tab"><span>◫</span> 작업 노트</span>
+                <span class="mock-bottom"><span>◉</span> <span>○</span> <span>＋</span></span>
+              </div>
+              <div class="mock-page" id="demoPage">
+                <img class="demo-wallpaper" id="demoWallpaper" src="/assets/seoul-night.jpg" alt="" width="1672" height="941" fetchpriority="high">
+                <div class="mock-shade"></div>
+                <div class="mock-page-nav"><b>시작 페이지</b><span>즐겨찾기</span><span>방문 기록</span><span>꾸미기</span></div>
+                <div class="mock-home">
+                  <span class="mock-place">서울 <span>·</span> <span id="demoCondition">맑은 밤</span></span>
+                  <span class="mock-clock" id="demoClock">20:42</span>
+                  <span class="mock-search">⌕ <span>검색하거나 웹 주소를 입력하세요</span></span>
+                  <div class="mock-dials"><span><i>G</i>Google</span><span><i>▶</i>YouTube</span><span><i>N</i>네이버</span><span><i>＋</i>추가</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="demo-caption">
+          <div><strong>서울의 새 탭</strong><span>남산 배경을 바꿔보세요.</span></div>
+          <div class="weather-switch" role="group" aria-label="새 탭 배경 미리보기">
+            <button type="button" data-scene="day" aria-pressed="false"><span aria-hidden="true">☀</span> 낮</button>
+            <button type="button" data-scene="night" aria-pressed="true"><span aria-hidden="true">☾</span> 밤</button>
+            <button type="button" data-scene="rain" aria-pressed="false"><span aria-hidden="true">☂</span> 비</button>
+            <button type="button" data-scene="snow" aria-pressed="false"><span aria-hidden="true">❄</span> 눈</button>
+          </div>
+        </figcaption>
+        <p id="sceneStatus" class="sr-only" role="status"></p>
+      </figure>
+    </section>
+
+    <section class="features shell" id="features" aria-labelledby="features-title">
+      <div class="section-intro">
+        <h2 id="features-title">탭은 정리하고,<br>할 일은 한눈에.</h2>
+        <p>탭을 쌓아 두는 방식부터 창을 나누는 방식까지, 지금 하는 일에 맞춰 바꿀 수 있어요.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature feature-space">
+          <div class="feature-copy"><h3>일과 일상을 나누는 스페이스</h3><p>탭과 사이트 로그인은 스페이스별로 분리됩니다. 탭을 위나 왼쪽, 오른쪽에 두고 그룹으로 묶으세요.</p></div>
+          <div class="space-preview" aria-hidden="true">
+            <div><span class="space-dot purple"></span><b>개인</b><span class="space-item">여행 지도</span><span class="space-item">음악</span></div>
+            <div><span class="space-dot orange"></span><b>업무</b><span class="space-item">프로젝트 노트</span><span class="space-item">리서치</span></div>
+          </div>
+        </article>
+        <article class="feature feature-split">
+          <div class="feature-copy"><h3>두 페이지를 한 창에서</h3><p>문서와 자료를 나란히 열고, 구분선을 움직여 필요한 쪽을 넓혀보세요.</p></div>
+          <div class="split-preview" aria-hidden="true">
+            <div><span>서울 산책 지도</span><img src="/assets/seoul-day.jpg" width="1672" height="941" alt="" loading="lazy"></div>
+            <div><span>여행 노트</span><b>남산에서 저녁까지</b><i></i><i></i><i></i></div>
+          </div>
+        </article>
+        <article class="feature feature-search">
+          <div class="feature-copy"><h3>어디에 둔 탭이든 바로 찾기</h3><p>제목, 주소, 스페이스 이름으로 열린 탭과 최근 닫은 탭을 찾으세요. <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>A</kbd>로 시작할 수 있어요.</p></div>
+          <div class="search-preview" aria-hidden="true">
+            <div class="search-preview-input">⌕ <b>서울</b></div>
+            <div><small>열린 탭</small><span>◉　서울 여행 지도</span></div>
+            <div><small>최근 닫은 탭</small><span>↶　서울의 작은 서점</span></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="download shell" id="download" aria-labelledby="download-title">
+      <div class="download-panel">
+        <img src="/assets/orbit.svg" alt="" width="72" height="72" loading="lazy">
+        <h2 id="download-title">Orbit 다운로드</h2>
+        <p>버전 __ORBIT_VERSION__ · Windows x64</p>
+        <a class="primary" href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/Orbit-Setup-__ORBIT_VERSION__-x64.exe">설치 파일 받기 <span aria-hidden="true">↓</span></a>
+        <div class="release-links">
+          <a href="https://github.com/sua1dev/Orbit/releases/tag/v__ORBIT_VERSION__">변경 사항</a>
+          <a href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/SHA256SUMS.txt">SHA-256</a>
+        </div>
+        <p class="install-note">설치 파일은 코드 서명 없이 배포됩니다. Windows에서 게시자 확인 메시지가 표시될 수 있습니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer shell">
+    <a class="wordmark" href="/"><img src="/assets/orbit.svg" alt="" width="24" height="24">Orbit</a>
+    <div><a href="https://intro-us.xyz/">Sua 포트폴리오</a><a href="https://github.com/sua1dev/Orbit/issues">문제 제보 ↗</a></div>
+  </footer>
+</body>
+</html>

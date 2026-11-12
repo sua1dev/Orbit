@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const files = ['main.cjs', 'preload.cjs', 'login-preload.cjs'];
+const files = ['main.cjs', 'preload.cjs', 'login-preload.cjs', 'website/build.mjs', 'website/public/preview.js'];
 for (const folder of ['lib', 'scripts', 'tests', 'renderer']) {
   for (const name of fs.readdirSync(path.join(root, folder))) if (/\.c?js$/.test(name)) files.push(`${folder}/${name}`);
 }

@@ -165,6 +165,7 @@ function render(next){
   $('collapseButton').setAttribute('aria-label',$('collapseButton').title);
   $('collapseButton').setAttribute('aria-expanded',String(!state.sidebarCollapsed));
   renderTabs();renderTopTabs();renderSpaces();renderNavigation();renderPanes();renderDownloadBadge();renderFeatureUI();syncInternalPage();
+  if (overlayKind === 'tab-search') refreshTabSearch?.();
   if(overlayKind==='downloads')updateDownloads();
   if(state.notice&&state.notice!==lastNotice)showToast(state.notice);
   lastNotice=state.notice;
@@ -295,6 +296,7 @@ function renderDownloadBadge(){
 }
 
 async function openOverlay(kind){
+  if (kind !== 'tab-search') refreshTabSearch = null;
   const epoch=++overlayEpoch;
   const route=routeFor(activeTab()?.url),mount=document.querySelector('[data-internal-tab="'+activeTab()?.id+'"]');
   if(route&&route[3]===kind&&mount){overlayKind=kind;mount.replaceChildren();$('overlay').hidden=true;$('overlay').replaceChildren();await send('overlay',{open:false});return epoch;}
@@ -305,6 +307,7 @@ async function openOverlay(kind){
 }
 function closeOverlay(){
   if(!overlayKind&&closingOverlay)return closingOverlay;
+  refreshTabSearch = null;
   ++paletteSuggestionEpoch;clearTimeout(paletteTimer);paletteRemote=[];const epoch=++overlayEpoch;overlayKind=null;$('overlay').classList.add('is-closing');$('overlay').inert=true;
   const job=(async()=>{
     await new Promise(resolve=>setTimeout(resolve,motionQuery.matches?0:160));
@@ -335,6 +338,7 @@ async function openPalette(tabId){
   const footer=el('div','palette-footer');for(const [key,text] of [['↵','열기'],['↑ ↓','이동'],['esc','닫기']]){const s=el('span');s.append(el('kbd','',key),document.createTextNode(text));footer.append(s);}root.append(footer);$('overlay').append(root);
   input.addEventListener('input',()=>{paletteIndex=0;paletteRemote=[];const epoch=++paletteSuggestionEpoch;clearTimeout(paletteTimer);updatePalette(input.value);if(!state.incognito&&state.searchPreferences?.autocomplete&&state.searchPreferences?.onlineSuggestions){const query=input.value;paletteTimer=setTimeout(async()=>{const values=await bridge?.suggest(query).catch(()=>[]);if(epoch!==paletteSuggestionEpoch||overlayKind!=='palette'||input.value!==query)return;paletteRemote=values||[];updatePalette(query);},280);}});
   input.addEventListener('keydown',event=>{
+    if (event.isComposing || event.keyCode === 229) return;
     if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();paletteIndex=(paletteIndex+(event.key==='ArrowDown'?1:-1)+paletteResults.length)%paletteResults.length;highlightPalette();}
     else if(event.key==='Enter'){event.preventDefault();choosePalette(paletteIndex);}
   });
@@ -373,7 +377,7 @@ function highlightPalette(){document.querySelectorAll('.palette-result').forEach
 async function choosePalette(index){
   const result=paletteResults[index];if(!result||result.kind==='navigate'&&!result.value){$('paletteInput')?.focus();return;}
   const target=paletteTarget;await closeOverlay();
-  if(result.kind==='tab'){if(result.tab.spaceId!==state.activeSpaceId)await send('switchSpace',{id:result.tab.spaceId});await send('activateTab',{id:result.tab.id});}
+  if(result.kind==='tab'){await send('activateTab',{id:result.tab.id,acrossSpaces:true});}
   else {if(target&&state.tabs.some(t=>t.id===target))await send('activateTab',{id:target});await send('navigate',{input:result.value});}
 }
 
@@ -500,6 +504,8 @@ async function openTabMenu(tab){
     menuRow(tab.muted?'탭 소리 켜기':'탭 음소거',tab.muted?'volume':'volumeOff',perform('muteTab',{id:tab.id})),
     menuRow('주소 복사','link',perform('copyURL',{id:tab.id})),
     menuRow('탭 닫고 보관','archive',perform('closeTab',{id:tab.id})));body.append(actions);
+  if (/^https?:\/\//i.test(tab.url)) actions.insertBefore(
+    menuRow('탭 복제','copy',perform('duplicateTab',{id:tab.id})), actions.lastChild);
   const movement=el('div','tab-move-select'),label=el('label','','폴더 이동'),select=document.createElement('select');
   select.setAttribute('aria-label','탭을 이동할 폴더');let option=new Option('폴더 밖으로','');select.add(option);
   for(const folder of (state.folders||[]).filter(f=>f.spaceId===tab.spaceId))select.add(new Option(folder.name,folder.id));
@@ -567,6 +573,7 @@ $('collapseButton').addEventListener('click',()=>send('toggleSidebar'));
 $('newTabButton').addEventListener('click',newTab);
 $('spaceSelector').addEventListener('click',openSpaces);$('addSpaceButton').addEventListener('click',()=>openSpaceEditor());
 $('settingsButton').addEventListener('click',openSettings);$('downloadsButton').addEventListener('click',openDownloads);
+$('tabSearchButton').addEventListener('click',openTabSearch);
 $('addressButton').addEventListener('click',()=>openPalette());$('backButton').addEventListener('click',()=>send('back'));$('forwardButton').addEventListener('click',()=>send('forward'));$('reloadButton').addEventListener('click',()=>send('reload'));
 attachContextMenu($('addressButton'),'address');
 $('splitButton').addEventListener('click',()=>send(state?.splitTabIds?.length===2?'unsplit':'split'));$('pipButton').addEventListener('click',()=>send('pip'));
@@ -574,6 +581,7 @@ $('minimizeButton').addEventListener('click',()=>send('minimize'));$('maximizeBu
 $('dismissToast').addEventListener('click',hideToast);
 $('overlay').addEventListener('click',event=>{if(event.target===$('overlay'))closeOverlay();});
 document.addEventListener('keydown',event=>{
+  if (event.isComposing || event.keyCode === 229) return;
   if(event.key==='Escape'&&overlayKind){event.preventDefault();closeOverlay();return;}
   if(overlayKind){if(event.key==='Tab'){const focusable=[...$('overlay').querySelectorAll('button,input,select,textarea,a[href],[tabindex="0"]')].filter(n=>!n.disabled&&n.getClientRects().length),first=focusable[0],last=focusable.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}return;}
   if(event.ctrlKey&&!event.shiftKey&&event.key.toLowerCase()==='l'){event.preventDefault();openPalette();}
@@ -585,6 +593,7 @@ document.addEventListener('keydown',event=>{
 
 if(bridge){
   bridge.onState(render);
+  bridge.onCommand(command => { if (command === 'tab-search') openTabSearch(); });
   const syncMotion=()=>send('motionPreference',{reduced:motionQuery.matches});
   motionQuery.addEventListener('change',syncMotion);
   syncMotion();

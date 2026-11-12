@@ -32,6 +32,7 @@ const appearanceToolbarTools = [
   ['showFavoriteTool', 'favoriteButton', '즐겨찾기 추가'],
   ['showPipTool', 'pipButton', '미니 플레이어'],
   ['showSplitTool', 'splitButton', '분할 화면'],
+  ['showTabSearchTool', 'tabSearchButton', '탭 검색'],
 ];
 
 async function openAppearance() {

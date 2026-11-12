@@ -21,10 +21,11 @@ async function openAppMenu(event){
     ['새 시크릿 창','incognito',direct('newIncognitoWindow'),'Ctrl Shift N','incognito'],
     null,
     ['스페이스','spaces',openSpaces,'›','spaces'],
+    ['탭 검색','search',openTabSearch,'Ctrl Shift A','tab-search'],
     ['탭과 폴더','tabs',openTabLibrary,'›','tabs'],
     ['현재 탭 즐겨찾기 추가·제거','star',direct('favoriteTab',{id:state.activeTabId}),'Ctrl D','favorite-tab'],
     ['즐겨찾기','star',openFavorites,'›','favorites'],
-    ['닫은 탭 보관함','archive',openArchives,'Ctrl Shift T','archives'],
+    ['닫은 탭 보관함','archive',openArchives,'›','archives'],
     null,
     ['확장 프로그램','extension',openExtensions,'›','extensions'],
     ['개발자 도구','code',direct('devTools'),'F12','developer'],
@@ -193,7 +194,7 @@ async function closeFind(){
 async function openHelp(){
   const epoch=await openOverlay('help');if(epoch!==overlayEpoch)return;
   const {body}=dialog('Orbit 사용하기','생각의 흐름을 끊지 않는 작은 단축키들.','feature-dialog');
-  for(const [label,keys] of [['주소·탭 검색','Ctrl L / Ctrl T'],['새 창 / 새 시크릿 창','Ctrl N / Ctrl Shift N'],['즐겨찾기 추가·제거','Ctrl D'],['닫은 탭 다시 열기','Ctrl Shift T'],['페이지에서 찾기','Ctrl F'],['확대 / 축소 / 초기화','Ctrl + / Ctrl - / Ctrl 0'],['인쇄 / PDF 저장','Ctrl P / Ctrl Shift P'],['사이드바 접기·펼치기','Ctrl B'],['설정 / 다운로드','Ctrl , / Ctrl J'],['개발자 도구','F12']]){
+  for(const [label,keys] of [['주소 입력 / 새 탭','Ctrl L / Ctrl T'],['열린 탭과 닫은 탭 검색','Ctrl Shift A'],['새 창 / 새 시크릿 창','Ctrl N / Ctrl Shift N'],['즐겨찾기 추가·제거','Ctrl D'],['닫은 탭 다시 열기','Ctrl Shift T'],['페이지에서 찾기','Ctrl F'],['확대 / 축소 / 초기화','Ctrl + / Ctrl - / Ctrl 0'],['인쇄 / PDF 저장','Ctrl P / Ctrl Shift P'],['사이드바 접기·펼치기','Ctrl B'],['설정 / 다운로드','Ctrl , / Ctrl J'],['개발자 도구','F12']]){
     const row=el('div','help-shortcut');row.append(el('span','',label),el('kbd','',keys));body.append(row);
   }
   body.append(el('p','settings-footnote','북마크 가져오기는 다른 브라우저에서 내보낸 HTML 파일이나 Chromium Bookmarks JSON을 사용합니다. 로그인·암호는 가져오지 않습니다. 시크릿 창도 방문 사이트·네트워크 운영자로부터 활동을 숨기는 기능은 아닙니다.'));

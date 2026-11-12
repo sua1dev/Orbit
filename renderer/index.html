@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="start-page.css">
   <link rel="stylesheet" href="tab-strip.css">
   <link rel="stylesheet" href="panes.css">
+  <link rel="stylesheet" href="tab-search.css">
 </head>
 <body>
   <div id="app" class="app">
@@ -41,7 +42,7 @@
       <header class="toolbar drag">
         <div class="navigation no-drag"><button class="icon-button collapse-button" id="collapseButton" aria-controls="sidebar" aria-expanded="true" title="사이드바 접기" aria-label="사이드바 접기" data-icon="sidebar"></button><button class="icon-button" id="backButton" aria-label="뒤로" title="뒤로 (Alt + ←)" data-icon="back"></button><button class="icon-button" id="forwardButton" aria-label="앞으로" title="앞으로 (Alt + →)" data-icon="forward"></button><button class="icon-button" id="reloadButton" aria-label="새로고침" title="새로고침 (Ctrl + R)" data-icon="reload"></button></div>
         <button id="addressButton" class="address-button no-drag" aria-label="주소 또는 검색어 입력"><span id="addressIcon" data-icon="lock"></span><span id="addressText">주소 또는 검색어 입력</span><kbd>Ctrl L</kbd></button>
-        <div class="toolbar-actions no-drag"><button class="icon-button" id="passwordButton" aria-label="비밀번호 관리자" title="비밀번호 관리자" data-icon="key"></button><button class="icon-button" id="favoriteButton" aria-label="즐겨찾기에 추가" title="즐겨찾기에 추가 (Ctrl + D)" data-icon="star"></button><button class="icon-button" id="pipButton" aria-label="동영상 Picture-in-Picture" title="동영상 미니 플레이어" data-icon="pip"></button><button class="icon-button" id="splitButton" aria-label="분할 화면" title="분할 화면" data-icon="split"></button><button class="icon-button" id="moreButton" aria-label="Orbit 메뉴 열기" title="Orbit 메뉴" data-icon="more"></button></div>
+        <div class="toolbar-actions no-drag"><button class="icon-button" id="passwordButton" aria-label="비밀번호 관리자" title="비밀번호 관리자" data-icon="key"></button><button class="icon-button" id="favoriteButton" aria-label="즐겨찾기에 추가" title="즐겨찾기에 추가 (Ctrl + D)" data-icon="star"></button><button class="icon-button" id="pipButton" aria-label="동영상 Picture-in-Picture" title="동영상 미니 플레이어" data-icon="pip"></button><button class="icon-button" id="splitButton" aria-label="분할 화면" title="분할 화면" data-icon="split"></button><button class="icon-button" id="tabSearchButton" aria-label="탭 검색" aria-haspopup="dialog" aria-keyshortcuts="Control+Shift+A" title="탭 검색 (Ctrl + Shift + A)" data-icon="search"></button><button class="icon-button" id="moreButton" aria-label="Orbit 메뉴 열기" title="Orbit 메뉴" data-icon="more"></button></div>
         <div class="window-controls no-drag"><button id="minimizeButton" aria-label="최소화" data-icon="minus"></button><button id="maximizeButton" aria-label="최대화" data-icon="maximize"></button><button id="closeButton" class="window-close" aria-label="창 닫기" data-icon="close"></button></div>
       </header>
       <div class="work-area" id="workArea">
@@ -89,6 +90,7 @@
   <script src="start-page.js"></script>
   <script src="panes.js"></script>
   <script src="tab-strip.js"></script>
+  <script src="tab-search.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
