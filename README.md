@@ -4,6 +4,8 @@ Chromium을 내장한 Electron 기반 Windows 브라우저입니다. 세로 탭,
 
 [Orbit 소개 및 다운로드](https://orbit.intro-us.xyz/)
 
+Android용 Orbit Mobile 개발 빌드는 [mobile](mobile/)에서 확인할 수 있습니다.
+
 ## 1.4.6 변경 사항
 
 - 주소창 옆 돋보기 또는 `Ctrl + Shift + A`로 열린 탭과 최근 닫은 탭을 함께 찾습니다. 제목, 주소, 스페이스 이름으로 검색하고 방향키와 Enter로 선택할 수 있습니다.
