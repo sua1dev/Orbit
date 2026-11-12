@@ -12,7 +12,7 @@
 AppId=com.orbitbrowser.desktop
 AppName=Orbit
 AppVersion={#OrbitVersion}
-AppPublisher=Orbit Browser
+AppPublisher=Yuwol
 DefaultDirName={code:DefaultOrbitDir}
 DefaultGroupName=Orbit
 DisableProgramGroupPage=yes

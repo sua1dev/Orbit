@@ -1,11 +1,11 @@
 {
   "name": "orbit-browser",
   "productName": "Orbit",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "A Chromium-powered browser with spaces, vertical tabs and automatic picture in picture.",
   "main": "main.cjs",
   "private": true,
-  "author": "Orbit Browser",
+  "author": "悠月 · 유월 · Yuwol",
   "license": "UNLICENSED",
   "scripts": {
     "start": "node scripts/start.cjs",

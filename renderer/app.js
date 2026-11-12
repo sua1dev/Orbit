@@ -202,7 +202,9 @@ function renderTabs(){
       await send('reorderTab',{id,beforeId:target.id});
     });
     const visual=el('span','tab-visual');n.append(visual);n._visual=visual;
-    if(!pin){
+    if(pin){
+      n._title=el('span','tab-title pinned-tab-title');n.append(n._title);
+    }else{
       n.setAttribute('role','button');n.tabIndex=0;
       const title=el('span','tab-title'),actions=el('span','tab-actions');n._title=title;
       actions.append(button('tab-action','탭 고정','pin',event=>{event.stopPropagation();send('pinTab',{id:tab.id});}),closeVerticalTabButton(tab.id));
@@ -459,6 +461,13 @@ async function openSettings(){
 async function openAppInfo(){
   if(!state)return;const epoch=await openOverlay('app-info');if(overlayKind!=='app-info'||epoch!==overlayEpoch)return;
   const {body}=dialog('Orbit 정보','나만의 인터넷, 나만의 속도로.');
+  const creator=el('section','orbit-creator');
+  creator.append(el('strong','','悠月 · 유월 · Yuwol'),el('small','','개인 제작'));
+  const signatures=el('div','orbit-creator-signatures');
+  for(const [asset,alt] of [['yuwol-lavender.png','Yuwol 라벤더 별빛 사인'],['yuwol-crescent.png','유월 파스텔 초승달 사인']]){
+    const image=el('img');image.src='brand/'+asset;image.alt=alt;signatures.append(image);
+  }
+  creator.append(signatures);body.append(creator);
   const sections=[
     ['내 기기에 보관되는 데이터','열린 탭의 주소·제목, 스페이스, 색상 설정과 사이트 쿠키·캐시는 이 기기에 저장됩니다. 스페이스별로 로그인 저장소가 분리됩니다.'],
     ['사이트에 전달되는 정보','Orbit 자체는 분석·광고·오류 업로드 서버를 운영하지 않습니다. 웹사이트를 방문하면 해당 사이트로 요청이 전달되며, 검색어를 입력하면 Google 검색으로 전달됩니다.'],

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.software.picture_in_picture" android:required="false" />
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -14,6 +15,7 @@
             android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
             android:exported="true"
             android:launchMode="singleTop"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -27,5 +29,16 @@
                 <data android:scheme="http" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".PrivateBrowserActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:process=":private"
+            android:supportsPictureInPicture="true"
+            android:taskAffinity="xyz.introus.orbit.private"
+            android:windowSoftInputMode="adjustResize" />
+        <receiver android:name=".PrivateCleanupReceiver" android:exported="false" />
     </application>
 </manifest>

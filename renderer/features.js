@@ -94,6 +94,8 @@ function renderFolders(tabs,makeTabNode,updateTabNode){
     head.addEventListener('drop',async event=>{event.preventDefault();head.classList.remove('drop-target');const id=event.dataTransfer.getData('application/x-orbit-tab');if(id)await send('moveTab',{id,folderId:folder.id});});return group;
   },(group,folder)=>{
     const p=group._parts,children=tabs.filter(tab=>tab.folderId===folder.id);
+    group.classList.toggle('expanded',!folder.collapsed);
+    group.style.setProperty('--folder-tint',/^#[a-f0-9]{6}$/i.test(folder.color||'')?folder.color:'var(--accent)');
     p.head.setAttribute('aria-expanded',String(!folder.collapsed));p.head.setAttribute('aria-label',folder.name+' 폴더');
     replaceIcon(p.arrow,folder.collapsed?'chevronRight':'chevronDown');p.name.textContent=folder.name;p.count.textContent=children.length||'';p.list.hidden=folder.collapsed;
     reconcile(p.list,children,tab=>tab.id,tab=>makeTabNode(tab,false),updateTabNode,true);

@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Orbit은 스페이스, 세로 탭, 분할 화면, 서울의 날씨를 담은 시작 페이지를 갖춘 Windows 브라우저입니다.">
+  <meta name="description" content="Orbit은 스페이스, 탭 그룹, 분할 화면과 서울의 시작 페이지를 갖춘 개인 제작 브라우저입니다. Windows와 Android에서 만나보세요.">
   <meta name="theme-color" content="#f8f4ee">
   <meta property="og:title" content="Orbit 브라우저">
-  <meta property="og:description" content="탭을 정리하고, 내 방식대로 둘러보는 Windows 브라우저.">
+  <meta property="og:description" content="탭을 정리하고, 내 방식대로 둘러보는 Windows·Android 브라우저.">
   <meta property="og:image" content="https://orbit.intro-us.xyz/assets/seoul-night.jpg">
   <link rel="canonical" href="https://orbit.intro-us.xyz/">
   <link rel="icon" type="image/svg+xml" href="/assets/orbit.svg">
@@ -20,6 +20,7 @@
     <a class="wordmark" href="/" aria-label="Orbit 홈"><img src="/assets/orbit.svg" alt="" width="34" height="34">Orbit</a>
     <nav aria-label="페이지 메뉴">
       <a href="#features">기능</a>
+      <a href="#mobile">Android</a>
       <a href="#download">다운로드</a>
       <a href="https://github.com/sua1dev/Orbit">GitHub ↗</a>
     </nav>
@@ -39,6 +40,7 @@
 
       <figure class="demo" id="preview">
         <div class="demo-stage">
+          <div class="stage-orbits" aria-hidden="true"></div>
           <div class="browser-demo" role="img" aria-label="Orbit 새 탭 화면 미리보기. 왼쪽 세로 탭과 남산 배경, 가운데 시계와 검색창이 보입니다.">
             <div class="mock-top" aria-hidden="true">
               <img src="/assets/orbit.svg" alt="" width="18" height="18"><span class="mock-top-name">Orbit</span>
@@ -83,26 +85,26 @@
     </section>
 
     <section class="features shell" id="features" aria-labelledby="features-title">
-      <div class="section-intro">
+      <div class="section-intro" data-reveal>
         <h2 id="features-title">탭은 정리하고,<br>할 일은 한눈에.</h2>
         <p>탭을 쌓아 두는 방식부터 창을 나누는 방식까지, 지금 하는 일에 맞춰 바꿀 수 있어요.</p>
       </div>
       <div class="feature-grid">
-        <article class="feature feature-space">
+        <article class="feature feature-space" data-reveal>
           <div class="feature-copy"><h3>일과 일상을 나누는 스페이스</h3><p>탭과 사이트 로그인은 스페이스별로 분리됩니다. 탭을 위나 왼쪽, 오른쪽에 두고 그룹으로 묶으세요.</p></div>
           <div class="space-preview" aria-hidden="true">
             <div><span class="space-dot purple"></span><b>개인</b><span class="space-item">여행 지도</span><span class="space-item">음악</span></div>
             <div><span class="space-dot orange"></span><b>업무</b><span class="space-item">프로젝트 노트</span><span class="space-item">리서치</span></div>
           </div>
         </article>
-        <article class="feature feature-split">
+        <article class="feature feature-split" data-reveal>
           <div class="feature-copy"><h3>두 페이지를 한 창에서</h3><p>문서와 자료를 나란히 열고, 구분선을 움직여 필요한 쪽을 넓혀보세요.</p></div>
           <div class="split-preview" aria-hidden="true">
             <div><span>서울 산책 지도</span><img src="/assets/seoul-day.jpg" width="1672" height="941" alt="" loading="lazy"></div>
             <div><span>여행 노트</span><b>남산에서 저녁까지</b><i></i><i></i><i></i></div>
           </div>
         </article>
-        <article class="feature feature-search">
+        <article class="feature feature-search" data-reveal>
           <div class="feature-copy"><h3>어디에 둔 탭이든 바로 찾기</h3><p>제목, 주소, 스페이스 이름으로 열린 탭과 최근 닫은 탭을 찾으세요. <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>A</kbd>로 시작할 수 있어요.</p></div>
           <div class="search-preview" aria-hidden="true">
             <div class="search-preview-input">⌕ <b>서울</b></div>
@@ -113,8 +115,31 @@
       </div>
     </section>
 
+    <section class="mobile-section shell" id="mobile" aria-labelledby="mobile-title">
+      <div class="mobile-copy" data-reveal>
+        <p class="platform">Orbit Mobile · Android</p>
+        <h2 id="mobile-title">손끝에서 이어지는 탐색.</h2>
+        <p>하단 주소창에서 바로 검색하고, 탭 카드를 넘기거나 두 페이지를 한 화면에 열어 보세요. 즐겨찾기와 고정 탭, 색을 입힌 탭 그룹도 한곳에 모았습니다.</p>
+        <a class="mobile-download" href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/Orbit-Mobile-__ORBIT_ANDROID_VERSION__-Android.apk">Android 테스트 APK ↓</a>
+        <p class="mobile-version">Orbit Mobile __ORBIT_ANDROID_VERSION__ · Android 10 이상</p>
+        <a class="small-link" href="https://github.com/sua1dev/Orbit/tree/main/mobile">Android 빌드 안내 ↗</a>
+      </div>
+      <div class="mobile-stage" aria-hidden="true">
+        <div class="phone-shadow"></div>
+        <div class="phone">
+          <div class="phone-top"><img src="/assets/orbit.svg" alt="" width="20" height="20"><b>Orbit</b></div>
+          <div class="phone-scene">
+            <img src="/assets/seoul-night.jpg" alt="" width="1672" height="941" loading="lazy">
+            <div><small>서울 · 남산</small><strong>20:42</strong></div>
+          </div>
+          <div class="phone-dials"><span>G</span><span>N</span><span>▶</span><span>✦</span></div>
+          <div class="phone-bar"><b>3</b><span>⌕ 검색 또는 웹 주소</span><b>···</b></div>
+        </div>
+      </div>
+    </section>
+
     <section class="download shell" id="download" aria-labelledby="download-title">
-      <div class="download-panel">
+      <div class="download-panel" data-reveal>
         <img src="/assets/orbit.svg" alt="" width="72" height="72" loading="lazy">
         <h2 id="download-title">Orbit 다운로드</h2>
         <p>버전 __ORBIT_VERSION__ · Windows x64</p>
@@ -124,6 +149,17 @@
           <a href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/SHA256SUMS.txt">SHA-256</a>
         </div>
         <p class="install-note">설치 파일은 코드 서명 없이 배포됩니다. Windows에서 게시자 확인 메시지가 표시될 수 있습니다.</p>
+      </div>
+    </section>
+
+    <section class="maker shell" aria-labelledby="maker-title">
+      <div data-reveal>
+        <p class="platform">개인 제작</p>
+        <h2 id="maker-title">悠月 · 유월 · Yuwol</h2>
+      </div>
+      <div class="maker-signatures" data-reveal>
+        <img src="/assets/yuwol-lavender.png" alt="Yuwol 라벤더 별빛 사인" loading="lazy">
+        <img src="/assets/yuwol-crescent.png" alt="유월 파스텔 초승달 사인" loading="lazy">
       </div>
     </section>
   </main>

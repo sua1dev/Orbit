@@ -12,6 +12,21 @@ const clock = document.querySelector('#demoClock');
 const condition = document.querySelector('#demoCondition');
 const status = document.querySelector('#sceneStatus');
 let requestId = 0;
+const motion = matchMedia('(prefers-reduced-motion: no-preference)');
+
+if ('IntersectionObserver' in window) {
+  const observer = new IntersectionObserver(entries => {
+    for (const { target, isIntersecting } of entries) {
+      if (!isIntersecting) continue;
+      observer.unobserve(target);
+      if (motion.matches && target.animate) target.animate(
+        [{ opacity: .28, transform: 'translateY(20px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        { duration: 540, easing: 'cubic-bezier(.2,.72,.25,1)' }
+      );
+    }
+  }, { threshold: .12 });
+  document.querySelectorAll('[data-reveal]').forEach(node => observer.observe(node));
+}
 
 for (const button of buttons) {
   button.addEventListener('click', async () => {
@@ -29,6 +44,10 @@ for (const button of buttons) {
     if (currentRequest !== requestId) return;
     wallpaper.src = next.src;
     [condition.textContent, clock.textContent] = scenes[scene];
+    if (motion.matches && wallpaper.animate) {
+      wallpaper.getAnimations().forEach(animation => animation.cancel());
+      wallpaper.animate([{ opacity: .4 }, { opacity: 1 }], { duration: 370, easing: 'ease-out' });
+    }
     for (const choice of buttons) choice.setAttribute('aria-pressed', String(choice === button));
     status.textContent = '서울 배경 미리보기 · ' + scenes[scene][0];
   });

@@ -5,6 +5,9 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.net.Uri;
 import android.net.http.SslError;
+import android.os.Message;
+import android.view.MotionEvent;
+import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
@@ -18,30 +21,52 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+
 @SuppressLint("ViewConstructor") // Web pages are constructed with their owning activity and tab.
 final class BrowserPage extends WebView {
     int progress = 100;
     String error;
     Bitmap favicon;
+    final CookieManager cookies;
+    private final BrowserActivity owner;
+    private final TabStore.Tab tab;
+    private final String mobileAgent;
     private boolean disposed;
 
     @SuppressLint("SetJavaScriptEnabled") // The web engine has no JavaScript interface to native app code.
     BrowserPage(BrowserActivity activity, TabStore.Tab tab) {
         super(activity);
+        owner = activity;
+        this.tab = tab;
+        if (TabStore.DEFAULT.equals(tab.space)) cookies = CookieManager.getInstance();
+        else if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+            WebViewCompat.setProfile(this, activity.profileName(tab.space));
+            cookies = WebViewCompat.getProfile(this).getCookieManager();
+        } else throw new IllegalStateException("A named space requires WebView multi-profile support");
         WebSettings settings = getSettings();
+        mobileAgent = settings.getUserAgentString();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
+        settings.setSupportMultipleWindows(true);
         settings.setMediaPlaybackRequiresUserGesture(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
         settings.setSafeBrowsingEnabled(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false);
+        cookies.setAcceptThirdPartyCookies(this, false);
+        settings.setTextZoom(tab.textZoom);
+        if (tab.desktop) applyDesktopMode(true);
+        if (activity.privateMode()) {
+            settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+            setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        }
         setOverScrollMode(OVER_SCROLL_NEVER);
         setContentDescription("웹페이지");
 
@@ -56,7 +81,7 @@ final class BrowserPage extends WebView {
                 if (disposed) return;
                 String address = WebAddress.normalize(url);
                 if (address == null) {
-                    stopLoading();
+                    if (!"about:blank".equals(url) || tab.url != null) stopLoading();
                     return;
                 }
                 updateAddress(address);
@@ -87,6 +112,7 @@ final class BrowserPage extends WebView {
                 progress = 100;
                 if (error == null) {
                     tab.title = new TabStore.Page(tab.url, getTitle()).title;
+                    activity.pageVisited(tab, BrowserPage.this);
                 }
                 activity.pageChanged(tab, BrowserPage.this, true);
             }
@@ -147,6 +173,20 @@ final class BrowserPage extends WebView {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 return activity.chooseFiles(callback, params);
             }
+
+            @Override public boolean onCreateWindow(WebView view, boolean dialog, boolean userGesture, Message result) {
+                return userGesture && activity.createPopup(tab, result);
+            }
+
+            @Override public void onCloseWindow(WebView window) {
+                if (!disposed) activity.closePopup(tab);
+            }
+
+            @Override public void onShowCustomView(View view, CustomViewCallback callback) {
+                activity.showVideo(BrowserPage.this, view, callback);
+            }
+
+            @Override public void onHideCustomView() { activity.hideVideo(BrowserPage.this); }
         });
 
         setDownloadListener(activity::confirmDownload);
@@ -165,6 +205,17 @@ final class BrowserPage extends WebView {
                     return false;
             }
         });
+    }
+
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) owner.focusPane(tab);
+        return super.onTouchEvent(event);
+    }
+
+    void applyDesktopMode(boolean enabled) {
+        getSettings().setUserAgentString(enabled
+                ? mobileAgent.replaceFirst("\\([^)]*\\)", "(X11; Linux x86_64)").replace(" Mobile", "")
+                : mobileAgent);
     }
 
     Bitmap thumbnail() {

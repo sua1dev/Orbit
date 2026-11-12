@@ -38,6 +38,7 @@ final class StartPage {
     private ImageView wallpaper;
     private TextView date;
     private TextView clock;
+    private TextView location;
     private String shownScene;
 
     StartPage(BrowserChrome chrome) {
@@ -52,11 +53,19 @@ final class StartPage {
             case "night":
             case "rain":
             case "snow":
+            case "solid":
+            case "custom":
                 return picked;
             default:
+                SeoulWeather.Reading weather = canRequestWeather(activity) ? SeoulWeather.current() : null;
+                if (weather != null) return weather.scene;
                 int hour = ZonedDateTime.now(SEOUL).getHour();
                 return hour >= 6 && hour < 18 ? "day" : "night";
         }
+    }
+
+    private static boolean canRequestWeather(BrowserActivity activity) {
+        return !activity.privateMode() && activity.preferences.getBoolean("onlineWeather", true);
     }
 
     View build() {
@@ -94,6 +103,8 @@ final class StartPage {
         inner.addView(hero(), heroSize);
 
         LinearLayout shortcuts = chrome.row();
+        String dialSize = activity.preferences.getString("dialSize", "medium");
+        int dialHeight = dialSize.equals("small") ? 56 : dialSize.equals("large") ? 76 : 66;
         for (String[] entry : SHORTCUTS) {
             LinearLayout tile = chrome.column();
             tile.setGravity(Gravity.CENTER);
@@ -107,14 +118,16 @@ final class StartPage {
             TextView caption = chrome.oneLine(entry[0], 11, chrome.ink, true);
             caption.setGravity(Gravity.CENTER);
             chrome.addTop(tile, caption, 4);
-            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(0, chrome.dp(66), 1);
+            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(0, chrome.dp(dialHeight), 1);
             if (shortcuts.getChildCount() != 0) size.setMarginStart(chrome.dp(7));
             shortcuts.addView(tile, size);
         }
         TextView shortcutsTitle = chrome.text("바로가기", 15, chrome.ink, true);
         shortcutsTitle.setAccessibilityHeading(true);
-        chrome.addTop(inner, shortcutsTitle, 18);
-        chrome.addTop(inner, shortcuts, 7);
+        if (activity.preferences.getBoolean("showShortcuts", true) && !activity.privateMode()) {
+            chrome.addTop(inner, shortcutsTitle, 18);
+            chrome.addTop(inner, shortcuts, 7);
+        }
 
         if (!activity.store.bookmarks.isEmpty()) {
             TextView heading = chrome.text("즐겨찾기", 17, chrome.ink, true);
@@ -136,12 +149,21 @@ final class StartPage {
             }
             chrome.addTop(inner, bookmarkList, 7);
         }
+        if (activity.preferences.getBoolean("showDashboard", true) && !activity.privateMode()
+                && !activity.store.history.isEmpty()) {
+            chrome.addTop(inner, chrome.option(OrbitIcon.Kind.GLOBE, "최근 방문", activity.chrome::showHistory), 8);
+        }
+        if (activity.privateMode()) {
+            chrome.addTop(inner, chrome.text("시크릿 모드", 16, chrome.accent, true), 18);
+            chrome.addTop(inner, chrome.text("일반 탭과 로그인·사이트 데이터가 분리됩니다. 이 창을 닫으면 시크릿 탭이 정리됩니다.",
+                    14, chrome.muted, false), 6);
+        }
         return scroll;
     }
 
     private View hero() {
         FrameLayout hero = new FrameLayout(activity);
-        hero.setBackground(chrome.shape(0xff282244, 23, 0));
+        hero.setBackground(chrome.shape(activity.preferences.getInt("backgroundColor", 0xff282244), chrome.radius(23), 0));
         hero.setClipToOutline(true);
         wallpaper = new ImageView(activity);
         wallpaper.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -149,11 +171,13 @@ final class StartPage {
         hero.addView(wallpaper, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 
         View shade = new View(activity);
+        int dim = (int) (activity.preferences.getInt("overlay", 35) * 2.4f);
         shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x080f1328, 0x180d1125, 0xdd100c26}));
+                new int[]{(dim / 3 << 24) | 0x0f1328, (dim / 2 << 24) | 0x0d1125,
+                        (Math.min(250, 120 + dim) << 24) | 0x100c26}));
         hero.addView(shade, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 
-        TextView location = chrome.text("서울 · 남산", 12, Color.WHITE, true);
+        location = chrome.text("서울 · 남산", 12, Color.WHITE, true);
         location.setPadding(chrome.dp(9), chrome.dp(5), chrome.dp(9), chrome.dp(5));
         location.setBackground(chrome.shape(0xa5141531, 9, 0x38ffffff));
         FrameLayout.LayoutParams locationSize = new FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP | Gravity.END);
@@ -168,6 +192,7 @@ final class StartPage {
         clock.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         clock.setLetterSpacing(-.065f);
         clock.setFontFeatureSettings("tnum");
+        clock.setVisibility(activity.preferences.getBoolean("showClock", true) ? View.VISIBLE : View.GONE);
         time.addView(clock);
         FrameLayout.LayoutParams timeSize = new FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.BOTTOM);
         timeSize.setMargins(chrome.dp(17), 0, chrome.dp(17), chrome.dp(14));
@@ -179,15 +204,25 @@ final class StartPage {
     void refresh() {
         String current = scene(activity);
         if (!current.equals(shownScene)) {
-            wallpaper.setImageBitmap(chrome.image("wallpapers/seoul-" + current + ".jpg"));
+            wallpaper.setImageBitmap(current.equals("custom") ? activity.files.customImage() :
+                    current.equals("solid") ? null : chrome.image("wallpapers/seoul-" + current + ".jpg"));
             shownScene = current;
         }
         ZonedDateTime now = ZonedDateTime.now(SEOUL);
         date.setText(DATE.format(now));
         String time = TIME.format(now);
         clock.setText(time);
-        clock.getPaint().setShader(new LinearGradient(0, 0, clock.getPaint().measureText(time), 0,
-                new int[]{0xffffc9ee, 0xffd4c3ff, 0xff9feaff}, null, Shader.TileMode.CLAMP));
+        boolean gradient = !activity.preferences.getString("clockStyle", "gradient").equals("plain");
+        clock.getPaint().setShader(gradient ? new LinearGradient(0, 0, clock.getPaint().measureText(time), 0,
+                new int[]{0xffffc9ee, 0xffd4c3ff, 0xff9feaff}, null, Shader.TileMode.CLAMP) : null);
         clock.setContentDescription("서울 시각 " + time);
+        boolean online = canRequestWeather(activity);
+        boolean show = activity.preferences.getBoolean("showWeather", true);
+        SeoulWeather.Reading weather = online && show ? SeoulWeather.current() : null;
+        location.setText(weather == null ? "서울 · 남산" : "서울 · " + weather.description + " · " + weather.temperature + "°C");
+        if (online && (show || activity.preferences.getString("scene", "auto").equals("auto")))
+            SeoulWeather.update(() -> activity.runOnUiThread(() -> {
+                if (!activity.isDestroyed() && wallpaper.isAttachedToWindow()) refresh();
+            }));
     }
 }

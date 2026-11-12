@@ -103,6 +103,42 @@
 }
 .app .tab-folder { color: var(--ink); margin-bottom: 5px; }
 .app .folder-heading { opacity: 1; }
+.app:not(.collapsed) .tab-folder.expanded {
+  background: color-mix(in srgb, var(--folder-tint, var(--accent)) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--folder-tint, var(--accent)) 20%, var(--line));
+  border-radius: 12px;
+  padding: 3px 3px 5px;
+}
+.app:not(.collapsed) .tab-folder.expanded .folder-heading > svg {
+  color: color-mix(in srgb, var(--folder-tint, var(--accent)) 66%, var(--ink));
+}
+.app:not(.collapsed) .sidebar-scroll :is(.favorites-section,.pinned-section) {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  margin-bottom: 8px;
+}
+.app:not(.collapsed) .sidebar-scroll .pinned-grid { margin-bottom: 0; }
+.app:not(.collapsed) .sidebar-scroll .pinned-grid { grid-template-columns: minmax(0,1fr); }
+.app:not(.collapsed) .sidebar-scroll .pinned-tab {
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding-inline: 9px;
+}
+.app.collapsed .pinned-tab-title { display: none; }
+.orbit-creator {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  background: linear-gradient(140deg, #21192f, #372947);
+  color: #f8edff;
+  border-radius: 15px;
+}
+.orbit-creator small { color: #d8c5e9; }
+.orbit-creator-signatures { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.orbit-creator-signatures img { width: 100%; aspect-ratio: 2.65; object-fit: contain; }
 .folder-tabs { border-color: var(--line); }
 .tab-row { margin: 2px 0; height: 37px; border-radius: 8px; }
 .tab-title { font-size: 13px; }
