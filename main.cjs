@@ -13,7 +13,7 @@ const {fetchSuggestions}=require('./lib/search-suggestions.cjs');
 const { createSeoulWeatherService } = require('./lib/seoul-weather.cjs');
 const { fileTypes, launchDocumentPath, openLocalDocument } = require('./lib/local-document.cjs');
 const { chromeMenuItems, item: chromeMenuItem } = require('./lib/chrome-menu.cjs');
-const { cleanPanel, editPanel, findLink } = require('./lib/quick-links.cjs');
+const { createSitePermissions } = require('./lib/site-permissions.cjs');
 
 const { parseBookmarkHTML, parseChromiumBookmarks } = require('./lib/bookmarks.cjs');
 const { resolveExtensionDirectory } = require('./lib/extension-path.cjs');
@@ -34,7 +34,7 @@ const uiURL = pathToFileURL(uiPath).href;
 const controllers = new Set();
 const contentsOwners = new Map();
 const sessions = new Map();
-const permissionDecisions = new Map();
+const sessionPermissions = new Map();
 const rpcExtensions = new Map();
 const rpcExtensionFile = path.join(app.getPath('userData'), 'orbit-rpc-extensions.json');
 const passwordVault = new PasswordVault(path.join(app.getPath('userData'), 'orbit-passwords.bin'), safeStorage);
@@ -161,7 +161,7 @@ const faviconRequests = new Map();
 const faviconJobs = new Map();
 const extensionWindows = new Set();
 let actionQueue = Promise.resolve();
-const controller = { get win() { return win; }, get incognito() { return incognito; }, get primary() { return primary; }, get state() { return state; }, snapshot, layout, applyGuestLayout, handleAction, publish, receiveDownload, saveNow, closeExtensionPopups, rpcCandidates, loginEvent, suggest, canWriteClipboard, openChromeMenu };
+const controller = { get win() { return win; }, get incognito() { return incognito; }, get primary() { return primary; }, get state() { return state; }, snapshot, layout, applyGuestLayout, handleAction, publish, receiveDownload, saveNow, closeExtensionPopups, rpcCandidates, loginEvent, suggest, isVisibleSite, openChromeMenu };
 controllers.add(controller);
 let suggestionRequest;
 async function suggest(query){
@@ -231,7 +231,8 @@ function snapshot() {
     muted: liveTabContents(entry.id)?.isAudioMuted() ?? false,
   }));
   const zoomFactor = liveTabContents(state.activeTabId)?.getZoomFactor() ?? 1;
-  return { ...state, history: incognito ? [] : state.history, tabs, webPanel: webPanel?.spaceId === state.activeSpaceId ? { ...webPanel.details } : null, incognito, windowCount: controllers.size, findResult, zoomFactor, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
+  const { quickLinks: _savedShortcuts, ...publicState } = state;
+  return { ...publicState, history: incognito ? [] : state.history, tabs, webPanel: webPanel?.spaceId === state.activeSpaceId ? { ...webPanel.details } : null, incognito, windowCount: controllers.size, findResult, zoomFactor, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
     isMaximized: win?.isMaximized() || false, reducedMotion, packaged: app.isPackaged, version: app.getVersion(), engine: { electron: process.versions.electron, chromium: process.versions.chrome } };
 }
 function persist() {
@@ -362,8 +363,12 @@ async function restorePipIfVisible() {
 }
 
 // Chromium retains document-focus and frame policy enforcement.
-function canWriteClipboard(wc){return !!(win&&!win.isDestroyed()&&!overlayOpen&&(visibleIds().some(id=>views.get(id)?.webContents===wc)||(webPanel?.view.webContents===wc&&webPanel.view.getVisible())));}
-function secureClipboardOrigin(origin){if(!origin)return false;const u=new URL(origin);return u.protocol==='https:'||(u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname));}
+function isVisibleSite(wc) {
+  return !overlayOpen && (visibleIds().some(id => {
+    const view = views.get(id);
+    return view?.webContents === wc && view.getVisible();
+  }) || (webPanel?.view.webContents === wc && webPanel.view.getVisible()));
+}
 function webOrigin(value) { return isWebURL(value) ? new URL(value).origin : null; }
 
 function configureSession(spaceId) {
@@ -371,28 +376,21 @@ function configureSession(spaceId) {
   if (sessions.has(partition)) return sessions.get(partition);
   const ses = session.fromPartition(partition);
   sessions.set(partition, ses);
-  ses.setPermissionCheckHandler((_wc, permission, requestingOrigin,details={}) => {
-    const origin = webOrigin(requestingOrigin);
-    if(permission==='clipboard-sanitized-write')return !!(_wc&&!_wc.isDestroyed()&&contentsOwners.get(_wc.id)?.canWriteClipboard(_wc)&&secureClipboardOrigin(origin));
-    if(['storage-access','top-level-storage-access'].includes(permission)){const embedding=webOrigin(_wc?.getURL()||'');return origin!==null&&embedding!==null&&permissionDecisions.get(partition+'|'+origin+'|'+permission+'|'+embedding)===true;}
-    return origin !== null && (permission === 'fullscreen' || permissionDecisions.get(`${partition}|${origin}|${permission}`) === true);
+  const permissions = createSitePermissions({
+    ownerFor: wc => contentsOwners.get(wc.id),
+    prompt: async (window, site, capability, once) => {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'question', title: '사이트 권한', message: site,
+        detail: `${capability} 권한을 허용할까요? ${once ? '이 요청에만 적용됩니다.' : '이 선택은 현재 실행 중에 유지됩니다.'}`,
+        buttons: ['차단', once ? '이번만 허용' : '허용'], defaultId: 0, cancelId: 0,
+      });
+      return response === 1;
+    },
   });
-  ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
-    const requestURL = details.requestingUrl || wc.getURL();
-    if(permission==='clipboard-sanitized-write')return callback(!!(!wc.isDestroyed()&&contentsOwners.get(wc.id)?.canWriteClipboard(wc)&&secureClipboardOrigin(webOrigin(requestURL))));
-    if (permission === 'fullscreen') return callback(isWebURL(requestURL));
-    if (!isWebURL(requestURL) || !['media', 'geolocation', 'notifications', 'clipboard-read','storage-access','top-level-storage-access'].includes(permission)) return callback(false);
-    const origin = webOrigin(requestURL);
-    const storage=['storage-access','top-level-storage-access'].includes(permission);
-    const embedding=storage?webOrigin(wc.getURL()):null;if(storage&&!embedding)return callback(false);
-    const key = `${partition}|${origin}|${permission}`+(storage?'|'+embedding:'');
-    if (permissionDecisions.has(key)) return callback(permissionDecisions.get(key));
-    const labels = { media: '카메라 / 마이크', geolocation: '위치', notifications: '알림', 'clipboard-read': '클립보드 읽기','storage-access':'삽입된 로그인 서비스의 쿠키 접근','top-level-storage-access':'연결된 로그인 서비스의 쿠키 접근' };
-    try {
-      const { response } = await dialog.showMessageBox(contentsOwners.get(wc.id)?.win, { type: 'question', title: '사이트 권한',
-        message: storage?`${embedding}에서 ${origin} 사용`:`${origin}`, detail: `${labels[permission]} 권한을 허용할까요? 이 선택은 현재 실행 중에 유지됩니다.`, buttons: ['차단', '허용'], defaultId: 0, cancelId: 0 });
-      const granted=response===1&&(!storage||(!wc.isDestroyed()&&webOrigin(wc.getURL())===embedding));permissionDecisions.set(key,granted);callback(granted);
-    } catch { callback(false); }
+  sessionPermissions.set(partition, permissions);
+  ses.setPermissionCheckHandler(permissions.check);
+  ses.setPermissionRequestHandler((wc, permission, callback, details) => {
+    permissions.request(wc, permission, details).then(callback, () => callback(false));
   });
   ses.setDisplayMediaRequestHandler((_request, callback) => callback({}));
   ses.on('will-download', (_event, item, source) => {
@@ -1062,20 +1060,6 @@ async function performAction(name, payload = {}) {
       target.faviconURL ||= safeRasterFaviconURL(favorite.faviconURL);
       await activateTab(target);break;
     }
-    case 'quickLinks': {
-      if (incognito || payload.space !== state.activeSpaceId) throw new Error('현재 일반 스페이스에서 바로가기를 편집해 주세요.');
-      state.quickLinks[payload.space] = editPanel(state.quickLinks[payload.space], payload);
-      syncShared('quickLinks');
-      break;
-    }
-    case 'openQuickLink': {
-      if (incognito || payload.space !== state.activeSpaceId) break;
-      const link = findLink(cleanPanel(state.quickLinks[payload.space]), payload.id);
-      if (!link) break;
-      const existing = state.tabs.find(entry => entry.spaceId === state.activeSpaceId && entry.url === link.url);
-      await activateTab(existing || makeTab(link.url));
-      break;
-    }
     case 'archiveTab': {
       const target = tabById(payload.id || state.activeTabId);if (target && await requestCloseView(target.id)) removeTab(target.id, target.openerId);break;
     }
@@ -1375,7 +1359,7 @@ async function performAction(name, payload = {}) {
       const ses = configureSession(space.id);await ses.clearCache();await ses.clearStorageData();
       await flushPersistentSiteData([ses]);
       const partition = incognito ? `orbit-private-${windowId}-${space.id}` : `persist:orbit-${space.id}`;
-      for (const key of permissionDecisions.keys()) if (key.startsWith(`${partition}|`)) permissionDecisions.delete(key);
+      sessionPermissions.get(partition)?.clear();
       notify('현재 스페이스의 사이트 데이터를 삭제했습니다.');break;
     }
     case 'overlay': if(!payload.open)suggestionRequest?.abort(); overlayOpen = payload.open === true; if (overlayOpen) win.webContents.focus(); break;
@@ -1454,7 +1438,8 @@ async function startWindow() {
     if (incognito) {
       for (const [partition, ses] of sessions) if (partition.startsWith('orbit-private-' + windowId + '-')) {
         ses.clearStorageData().catch(() => {});ses.clearCache().catch(() => {});sessions.delete(partition);
-        for (const key of permissionDecisions.keys()) if (key.startsWith(partition + '|')) permissionDecisions.delete(key);
+        sessionPermissions.get(partition)?.clear();
+        sessionPermissions.delete(partition);
       }
     }
     for (const owner of controllers) owner.publish(false);

@@ -25,20 +25,21 @@ async function run() {
     await ui.waitForFunction(() => typeof window.browser?.action === 'function');
     const first = await action('navigate', { input: origin + '/first' });
     const second = await action('newTab', { url: origin + '/second' });
-    await ui.waitForFunction(async () => {
-      const { tabs } = await window.browser.getState();
-      return ['first', 'second'].every(title => tabs.some(tab => tab.title === title && !tab.loading));
-    });
 
     const muted = await action('muteTab', { id: second.activeTabId });
     assert.equal(muted.tabs.find(tab => tab.id === second.activeTabId).muted, true);
 
-    await app.evaluate(({ BrowserWindow }) => {
-      const views = BrowserWindow.getAllWindows().flatMap(window => window.contentView.children);
-      const first = views.find(view => view.webContents?.getTitle() === 'first');
-      const second = views.find(view => view.webContents?.getTitle() === 'second');
-      if (!first || !second) throw new Error('Expected both test views to be attached: ' +
-        views.map(view => view.webContents?.getTitle()).join(', '));
+    await app.evaluate(async ({ BrowserWindow }, origin) => {
+      let first, second;
+      const deadline = Date.now() + 5000;
+      do {
+        const views = BrowserWindow.getAllWindows().flatMap(window => window.contentView.children);
+        first = views.find(view => view.webContents?.getURL() === origin + '/first');
+        second = views.find(view => view.webContents?.getURL() === origin + '/second');
+        if (first && second) break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      } while (Date.now() < deadline);
+      if (!first || !second) throw new Error('Expected both test views to be attached');
       const descriptor = Object.getOwnPropertyDescriptor(second, 'webContents');
       const contents = second.webContents;
 
@@ -51,7 +52,7 @@ async function run() {
         if (descriptor) Object.defineProperty(second, 'webContents', descriptor);
         else delete second.webContents;
       }
-    });
+    }, origin);
 
     const closed = await action('closeTab', { id: second.activeTabId });
     assert.equal(closed.activeTabId, first.activeTabId);

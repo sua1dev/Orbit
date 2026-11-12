@@ -79,7 +79,8 @@ final class TabStore {
     final List<Space> spaces = new ArrayList<>();
     final List<Group> groups = new ArrayList<>();
     final List<Search> searches = new ArrayList<>();
-    final java.util.Map<String, QuickLinks> shortcutPanels = new java.util.LinkedHashMap<>();
+    // Preserve links from older profiles when the panel is absent.
+    final java.util.Map<String, JSONObject> shortcutPanels = new java.util.LinkedHashMap<>();
     private final SharedPreferences preferences;
     Tab active, splitFirst, splitSecond;
     float splitRatio = .5f;
@@ -120,7 +121,7 @@ final class TabStore {
         JSONObject shortcuts = state.optJSONObject("quickLinks");
         if (shortcuts != null) for (Space space : spaces) {
             JSONObject panel = shortcuts.optJSONObject(space.id);
-            if (panel != null) shortcutPanels.put(space.id, QuickLinks.read(panel));
+            if (panel != null) shortcutPanels.put(space.id, panel);
         }
         JSONArray open = state.optJSONArray("open");
         if (open != null) {
@@ -175,7 +176,6 @@ final class TabStore {
 
     Space activeSpace() { return space(active.space); }
 
-    QuickLinks quickLinks() { return shortcutPanels.computeIfAbsent(active.space, ignored -> QuickLinks.initial()); }
 
     List<Tab> currentTabs() {
         List<Tab> list = new ArrayList<>();
@@ -300,8 +300,8 @@ final class TabStore {
             for (Search entry : searches) searchList.put(new JSONObject().put("text", entry.text).put("space", entry.space));
             JSONObject shortcuts = new JSONObject();
             for (Space space : spaces) {
-                QuickLinks panel = shortcutPanels.get(space.id);
-                if (panel != null) shortcuts.put(space.id, panel.json());
+                JSONObject panel = shortcutPanels.get(space.id);
+                if (panel != null) shortcuts.put(space.id, panel);
             }
             JSONObject state = new JSONObject().put("open", open).put("active", tabs.indexOf(active))
                     .put("splitFirst", tabs.indexOf(splitFirst)).put("splitSecond", tabs.indexOf(splitSecond))

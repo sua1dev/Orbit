@@ -24,6 +24,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.AccelerateInterpolator;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -61,7 +63,7 @@ final class BrowserChrome {
     private final TextView tabButton;
     private final ImageButton more;
     private final Map<String, Bitmap> images = new HashMap<>();
-    private View panel;
+    private PanelLayer panel;
     private EditText searchInput;
     private TextView panelTitle;
     private StartPage home;
@@ -72,6 +74,7 @@ final class BrowserChrome {
     private BrowserSettings settings;
     private BrowserPage findPage;
     private String panelName;
+    private TabStore.Tab presentedTab;
     private boolean dark;
     int paper, ink, muted, line, card, accent, onAccent, soft;
 
@@ -169,8 +172,8 @@ final class BrowserChrome {
         more.setBackground(actionSurface(card, 16));
         progress.setProgressTintList(ColorStateList.valueOf(accent));
         progress.setProgressBackgroundTintList(ColorStateList.valueOf(paper));
-        if ("settings".equals(panelName) && panel instanceof FrameLayout) {
-            ((FrameLayout) panel).getChildAt(0).setBackground(shape(card, radius(24), line));
+        if ("settings".equals(panelName) && panel != null) {
+            panel.getChildAt(0).setBackground(shape(card, radius(24), line));
             if (panelTitle != null) {
                 panelTitle.setTextColor(ink);
                 LinearLayout header = (LinearLayout) panelTitle.getParent();
@@ -198,6 +201,8 @@ final class BrowserChrome {
     void pause() { root.removeCallbacks(homeClock); }
 
     void present(TabStore.Tab tab, BrowserPage page) {
+        boolean entering = presentedTab != tab || splitLayout != null;
+        presentedTab = tab;
         clearSplitUi();
         if (page != null && page.error == null && page.getParent() == content && content.getChildCount() == 1) {
             updateBar(tab, page);
@@ -214,10 +219,12 @@ final class BrowserChrome {
             if (page.getParent() instanceof ViewGroup) ((ViewGroup) page.getParent()).removeView(page);
             content.addView(page, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
         }
+        if (entering) revealPage();
         updateBar(tab, page);
     }
 
     void presentSplit(BrowserPage first, BrowserPage second) {
+        presentedTab = activity.store.active;
         TabStore.Tab a = activity.store.splitFirst, b = activity.store.splitSecond;
         boolean sideBySide = activity.preferences.getString("splitDirection", "auto").equals("side")
                 || (activity.preferences.getString("splitDirection", "auto").equals("auto")
@@ -255,6 +262,7 @@ final class BrowserChrome {
                 splitLayout.addView(pane, paneSize(sideBySide, index));
             }
             content.addView(splitLayout, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
+            revealPage();
         }
         updatePane(0, first);
         updatePane(1, second);
@@ -266,6 +274,20 @@ final class BrowserChrome {
         splitFrames = null;
         splitTitles = null;
         splitTabs = null;
+    }
+
+    private boolean motionEnabled() {
+        return ValueAnimator.areAnimatorsEnabled() && activity.preferences.getBoolean("animations", true);
+    }
+
+    private void revealPage() {
+        content.animate().cancel();
+        if (!motionEnabled()) {
+            content.setAlpha(1f);
+            return;
+        }
+        content.setAlpha(.7f);
+        content.animate().alpha(1f).setDuration(180).setInterpolator(new DecelerateInterpolator()).start();
     }
 
     private LinearLayout.LayoutParams paneSize(boolean side, int index) {
@@ -411,7 +433,6 @@ final class BrowserChrome {
 
     void showSearch(boolean blank) {
         LinearLayout sheet = openPanel("search", "주소와 검색");
-        controls.setVisibility(View.GONE);
         EditText input = edit("검색어 또는 웹 주소", true);
         searchInput = input;
         input.setImeOptions(EditorInfo.IME_ACTION_GO | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
@@ -614,7 +635,6 @@ final class BrowserChrome {
         library.removeAllViews();
         if (!query.isEmpty()) return;
         TabStore store = activity.store;
-        if (!activity.privateMode()) addTop(library, new QuickLinksPanel(this, this::showTabs).view(), 0);
         if (!store.bookmarks.isEmpty()) {
             addTop(library, text("즐겨찾기", 14, muted, true), 3);
             LinearLayout line = null;
@@ -666,7 +686,7 @@ final class BrowserChrome {
         addTop(library, option(Kind.PLUS, "새 탭 그룹", () -> showGroupEditor(null, null)), 3);
     }
 
-    ImageView favicon(String url) {
+    private ImageView favicon(String url) {
         String host = WebAddress.displayHost(url);
         String known = host.equals("google.com") ? "google" : host.equals("youtube.com") ? "youtube" :
                 host.equals("discord.com") ? "discord" : host.equals("naver.com") ? "naver" : host.equals("github.com") ? "github" : null;
@@ -1080,24 +1100,35 @@ final class BrowserChrome {
     boolean backPanel() { return (settings != null && settings.back()) || dismissPanel(); }
 
     LinearLayout openPanel(String kind, String title) {
-        dismissPanel();
+        boolean replacing = overlays.getChildCount() > 0;
+        dismissPanel(false);
+        if (overlays.getChildCount() > 0) {
+            PanelLayer closing = (PanelLayer) overlays.getChildAt(0);
+            closing.animate().cancel();
+            closing.getChildAt(0).animate().cancel();
+            removePanelLayer(closing);
+        }
         View focused = activity.getCurrentFocus();
         if (focused != null && focused != root) {
             activity.getSystemService(InputMethodManager.class).hideSoftInputFromWindow(focused.getWindowToken(), 0);
             root.requestFocus();
         }
         panelName = kind;
-        FrameLayout layer = new FrameLayout(activity);
+        boolean fixed = kind.equals("settings");
+        boolean sidebar = kind.equals("tabs") && activity.getResources().getConfiguration().screenWidthDp >= 600
+                && activity.preferences.getString("tabStyle", "cards").equals("list");
+        boolean left = activity.preferences.getString("sidebar", "left").equals("left");
+        int horizontal = left ? Gravity.START : Gravity.END;
+        boolean rtl = root.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        PanelLayer layer = new PanelLayer(sidebar ? dp(left != rtl ? -34 : 34) : 0,
+                sidebar ? 0 : dp(fixed ? 10 : 34));
         layer.setBackgroundColor(0x520e091b);
         layer.setOnClickListener(view -> dismissPanel());
         overlays.setVisibility(View.VISIBLE);
         overlays.addView(layer, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
         panel = layer;
         content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
-        boolean fixed = kind.equals("settings");
-        boolean sidebar = kind.equals("tabs") && activity.getResources().getConfiguration().screenWidthDp >= 600
-                && activity.preferences.getString("tabStyle", "cards").equals("list");
-        int horizontal = activity.preferences.getString("sidebar", "left").equals("left") ? Gravity.START : Gravity.END;
+        controls.setVisibility(kind.equals("search") ? View.GONE : View.VISIBLE);
         LinearLayout sheet = column();
         View container;
         if (fixed) container = sheet;
@@ -1125,16 +1156,26 @@ final class BrowserChrome {
         header.addView(iconButton(Kind.CLOSE, "닫기", this::dismissPanel),
                 new LinearLayout.LayoutParams(dp(48), dp(48)));
         sheet.addView(header);
-        if (ValueAnimator.areAnimatorsEnabled() && activity.preferences.getBoolean("animations", true)) {
-            container.setTranslationY(dp(12));
-            container.setAlpha(0f);
-            container.animate().translationY(0).alpha(1f).setDuration(180).start();
+        if (motionEnabled()) {
+            DecelerateInterpolator easing = new DecelerateInterpolator(1.5f);
+            if (!replacing) {
+                layer.setAlpha(0f);
+                layer.animate().alpha(1f).setDuration(210).setInterpolator(easing).start();
+            }
+            container.setTranslationX(layer.offsetX);
+            container.setTranslationY(layer.offsetY);
+            container.setAlpha(replacing ? .6f : 1f);
+            container.animate().translationX(0f).translationY(0f).alpha(1f)
+                    .setDuration(245).setInterpolator(easing).start();
         }
         return sheet;
     }
 
-    boolean dismissPanel() {
+    boolean dismissPanel() { return dismissPanel(true); }
+
+    private boolean dismissPanel(boolean animate) {
         if (panel == null) return false;
+        PanelLayer closing = panel;
         if (findPage != null) {
             findPage.clearMatches();
             findPage.setFindListener(null);
@@ -1150,12 +1191,42 @@ final class BrowserChrome {
         panelName = null;
         panelTitle = null;
         settings = null;
-        overlays.removeAllViews();
-        overlays.setVisibility(View.GONE);
-        controls.setVisibility(View.VISIBLE);
         content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        closing.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         root.requestFocus();
+        View container = closing.getChildAt(0);
+        closing.animate().cancel();
+        container.animate().cancel();
+        if (animate && motionEnabled() && closing.isLaidOut()) {
+            AccelerateInterpolator easing = new AccelerateInterpolator();
+            container.animate().translationX(closing.offsetX).translationY(closing.offsetY)
+                    .setDuration(160).setInterpolator(easing).start();
+            closing.animate().alpha(0f).setDuration(160).setInterpolator(easing)
+                    .withEndAction(() -> removePanelLayer(closing)).start();
+        } else removePanelLayer(closing);
         return true;
+    }
+
+    private void removePanelLayer(PanelLayer layer) {
+        overlays.removeView(layer);
+        if (overlays.getChildCount() == 0) {
+            overlays.setVisibility(View.GONE);
+            controls.setVisibility(View.VISIBLE);
+        }
+    }
+
+    private final class PanelLayer extends FrameLayout {
+        final int offsetX, offsetY;
+
+        PanelLayer(int offsetX, int offsetY) {
+            super(activity);
+            this.offsetX = offsetX;
+            this.offsetY = offsetY;
+        }
+
+        @Override public boolean onInterceptTouchEvent(MotionEvent event) {
+            return panel != this || super.onInterceptTouchEvent(event);
+        }
     }
 
     Bitmap image(String name) {

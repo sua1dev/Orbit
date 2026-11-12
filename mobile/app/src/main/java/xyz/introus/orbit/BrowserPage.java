@@ -12,6 +12,7 @@ import android.webkit.CookieManager;
 import android.webkit.GeolocationPermissions;
 import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
+import android.webkit.SafeBrowsingResponse;
 import android.webkit.SslErrorHandler;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -34,6 +35,7 @@ final class BrowserPage extends WebView {
     private final TabStore.Tab tab;
     private final String mobileAgent;
     private boolean disposed;
+    private long documentVersion;
 
     @SuppressLint("SetJavaScriptEnabled") // The web engine has no JavaScript interface to native app code.
     BrowserPage(BrowserActivity activity, TabStore.Tab tab) {
@@ -79,6 +81,7 @@ final class BrowserPage extends WebView {
 
             @Override public void onPageStarted(WebView view, String url, Bitmap icon) {
                 if (disposed) return;
+                documentVersion++;
                 String address = WebAddress.normalize(url);
                 if (address == null) {
                     if (!"about:blank".equals(url) || tab.url != null) stopLoading();
@@ -134,6 +137,16 @@ final class BrowserPage extends WebView {
                 }
             }
 
+            @Override public void onSafeBrowsingHit(WebView view, WebResourceRequest request, int threatType,
+                                                    SafeBrowsingResponse response) {
+                response.backToSafety(false);
+                if (!disposed && request.isForMainFrame() && samePage(request.getUrl().toString())) {
+                    error = "Android에서 위험하다고 판단한 사이트를 차단했어요.";
+                    progress = 100;
+                    activity.pageFailed(tab, BrowserPage.this);
+                }
+            }
+
             @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                 if (!disposed) activity.rendererExited(tab, BrowserPage.this);
                 return true;
@@ -171,7 +184,7 @@ final class BrowserPage extends WebView {
             }
 
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
-                return activity.chooseFiles(callback, params);
+                return activity.chooseFiles(BrowserPage.this, callback, params);
             }
 
             @Override public boolean onCreateWindow(WebView view, boolean dialog, boolean userGesture, Message result) {
@@ -211,6 +224,8 @@ final class BrowserPage extends WebView {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) owner.focusPane(tab);
         return super.onTouchEvent(event);
     }
+
+    long documentVersion() { return documentVersion; }
 
     void applyDesktopMode(boolean enabled) {
         getSettings().setUserAgentString(enabled

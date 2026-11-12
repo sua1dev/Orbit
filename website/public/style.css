@@ -77,34 +77,11 @@ h1 { font-family: "Instrument Serif", "Noto Serif KR", Batang, "Times New Roman"
 .primary > span { font-size: 18px; }
 .small-link { font-size: 13px; color: var(--muted); text-underline-offset: 4px; }
 
-.shortcut-section, .preview-section {
+.preview-section {
   border-top: 1px solid var(--line);
   padding-top: clamp(52px, 9vw, 112px);
   scroll-margin-top: 26px;
 }
-.shortcut-section { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(24px, 5vw, 76px); align-items: center; }
-.editorial-copy > p:not(.platform) { margin-top: 16px; color: var(--muted); font-size: 17px; word-break: keep-all; }
-.editorial-copy > p.section-note { font-size: 13px; }
-.shortcut-stage {
-  display: grid;
-  place-items: center;
-  border: 1px solid #4b3a62;
-  border-radius: 25px;
-  padding: clamp(16px, 5vw, 46px);
-  background: radial-gradient(ellipse at 90% 12%, #49375d, transparent 63%), #241c30;
-}
-.shortcut-demo { width: min(100%, 380px); background: #1d1925; color: #f8f3ff; border: 1px solid #54485f; padding: 11px; border-radius: 18px; box-shadow: 0 20px 58px #100b1a9c; }
-.shortcut-demo-header, .shortcut-demo-row { display: flex; align-items: center; gap: 9px; }
-.shortcut-demo-header { padding: 3px 3px 10px; }
-.shortcut-demo-header span { margin-inline-start: auto; color: #c3b9ce; font-size: 12px; }
-.shortcut-demo-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.shortcut-demo-grid > div { display: grid; place-items: center; height: 51px; border: 1px solid #53485f; border-radius: 10px; background: #373040; }
-.shortcut-demo-grid > .shortcut-empty { border-style: dashed; background: transparent; color: #d2bce8; }
-.shortcut-demo-row, .shortcut-demo-folder { margin-top: 7px; padding: 9px 12px; border-radius: 10px; background: #373040; font-size: 14px; }
-.shortcut-demo-row span, .shortcut-demo-folder summary span { color: #e4bdff; }
-.shortcut-demo-folder summary { cursor: pointer; font-weight: 700; }
-.shortcut-demo-folder div { padding: 6px 0 0 26px; color: #ddd0e7; }
-.preview-section { margin-top: clamp(72px, 11vw, 145px); }
 
 .demo { margin: 0; }
 .demo-stage {
@@ -285,7 +262,6 @@ h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.0
 @media (max-width: 760px) {
   .shell { width: calc(100% - 38px); }
   .hero-copy { row-gap: 18px; }
-  .shortcut-section { grid-template-columns: 1fr; }
   .section-intro { display: grid; }
   .feature-grid { grid-template-columns: 1fr; }
   .feature-search { grid-column: auto; grid-template-columns: 1fr; }

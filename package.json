@@ -1,7 +1,7 @@
 {
   "name": "orbit-browser",
   "productName": "Orbit",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "A Chromium-powered browser with spaces, vertical tabs and automatic picture in picture.",
   "main": "main.cjs",
   "private": true,
@@ -9,7 +9,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "start": "node scripts/start.cjs",
-    "test": "node --test tests/model.test.cjs tests/bookmarks.test.cjs tests/extension-path.test.cjs tests/discord-rpc.test.cjs tests/passwords.test.cjs tests/orbit-spaces.test.cjs tests/history.test.cjs tests/internal-pages.test.cjs tests/youtube-popup.test.cjs tests/seoul-weather.test.cjs",
+    "test": "node --test tests/model.test.cjs tests/bookmarks.test.cjs tests/extension-path.test.cjs tests/discord-rpc.test.cjs tests/passwords.test.cjs tests/orbit-spaces.test.cjs tests/history.test.cjs tests/internal-pages.test.cjs tests/youtube-popup.test.cjs tests/seoul-weather.test.cjs tests/site-permissions.test.cjs",
     "test:features": "node tests/features.cjs",
     "test:smoke": "node tests/smoke.cjs",
     "test:motion": "node tests/motion.cjs",
@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",
-    "electron": "44.8.0",
+    "electron": "44.11.1",
     "electron-builder": "26.15.3",
     "playwright": "1.64.1"
   }

@@ -10,8 +10,8 @@ android {
         applicationId 'xyz.introus.orbit'
         minSdk 29
         targetSdk 36
-        versionCode 3
-        versionName '0.2.0-alpha.2'
+        versionCode 4
+        versionName '0.2.0-alpha.3'
         testInstrumentationRunner 'android.test.InstrumentationTestRunner'
     }
 

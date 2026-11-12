@@ -8,6 +8,8 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
@@ -16,6 +18,7 @@ import android.os.Bundle;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Message;
+import android.os.Process;
 import android.print.PrintManager;
 import android.view.View;
 import android.view.KeyEvent;
@@ -51,7 +54,8 @@ public class BrowserActivity extends ComponentActivity {
     TabStore store;
     BrowserChrome chrome;
     BrowserFiles files;
-    private ValueCallback<Uri[]> fileCallback;
+    private FileSelection fileSelection;
+    private record FileSelection(BrowserPage page, long document, String address, ValueCallback<Uri[]> callback) {}
     private View video;
     private BrowserPage videoPage;
     private WebChromeClient.CustomViewCallback videoCallback;
@@ -156,7 +160,10 @@ public class BrowserActivity extends ComponentActivity {
 
     @Override protected void onDestroy() {
         hideVideo();
-        if (fileCallback != null) fileCallback.onReceiveValue(null);
+        if (fileSelection != null) {
+            fileSelection.callback().onReceiveValue(null);
+            fileSelection = null;
+        }
         for (BrowserPage page : pages.values()) destroy(page);
         pages.clear();
         previews.clear();
@@ -714,13 +721,17 @@ public class BrowserActivity extends ComponentActivity {
                 }).show();
     }
 
-    boolean chooseFiles(ValueCallback<Uri[]> callback, WebChromeClient.FileChooserParams params) {
-        if (fileCallback != null) fileCallback.onReceiveValue(null);
-        fileCallback = callback;
+    boolean chooseFiles(BrowserPage page, ValueCallback<Uri[]> callback, WebChromeClient.FileChooserParams params) {
+        String address = WebAddress.normalize(page.getUrl());
+        if (fileSelection != null || page != activePage() || !hasWindowFocus() || address == null) {
+            callback.onReceiveValue(null);
+            return true;
+        }
+        fileSelection = new FileSelection(page, page.documentVersion(), address, callback);
         try {
             filePicker.launch(params.createIntent());
         } catch (RuntimeException unavailable) {
-            fileCallback = null;
+            fileSelection = null;
             callback.onReceiveValue(null);
             toast("파일 선택 앱을 열 수 없어요.");
         }
@@ -728,19 +739,37 @@ public class BrowserActivity extends ComponentActivity {
     }
 
     private void receiveFiles(int result, Intent data) {
-        if (fileCallback == null) return;
-        Uri[] selected = WebChromeClient.FileChooserParams.parseResult(result, data);
+        FileSelection selection = fileSelection;
+        if (selection == null) return;
+        fileSelection = null;
+        Uri[] selected = null;
+        if (selection.page() == activePage() && selection.page().documentVersion() == selection.document()
+                && selection.address().equals(WebAddress.normalize(selection.page().getUrl()))) {
+            selected = WebChromeClient.FileChooserParams.parseResult(result, data);
+        }
         if (selected != null) {
             for (Uri uri : selected) {
-                if (uri == null || !"content".equals(uri.getScheme())) {
+                if (!canUpload(uri)) {
                     selected = null;
                     break;
                 }
             }
         }
-        ValueCallback<Uri[]> callback = fileCallback;
-        fileCallback = null;
-        callback.onReceiveValue(selected);
+        selection.callback().onReceiveValue(selected);
+    }
+
+    private boolean canUpload(Uri uri) {
+        if (uri == null || !"content".equals(uri.getScheme()) || uri.getUserInfo() != null) return false;
+        String authority = uri.getAuthority();
+        if (authority == null || authority.isEmpty()) return false;
+        try {
+            ProviderInfo provider = getPackageManager().resolveContentProvider(authority, 0);
+            return (provider == null || provider.applicationInfo.uid != Process.myUid())
+                    && checkUriPermission(uri, Process.myPid(), Process.myUid(), Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException invalid) {
+            return false;
+        }
     }
 
     void confirmDownload(String url, String agent, String disposition, String mime, long size) {
