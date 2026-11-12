@@ -16,6 +16,8 @@ await Promise.all([
   ...['style.css', 'preview.js', '_headers'].map(file =>
     copyFile(relative('./public/' + file), relative('./dist/' + file))),
   copyFile(relative('../renderer/brand/orbit-mark.svg'), new URL('orbit.svg', assets)),
+  ...['orbit-windows.png', 'orbit-android.png'].map(file =>
+    copyFile(relative('./public/assets/' + file), new URL(file, assets))),
   ...['yuwol-lavender.png', 'yuwol-crescent.png'].map(file =>
     copyFile(relative('../renderer/brand/' + file), new URL(file, assets))),
   ...['day', 'night', 'rain', 'snow'].map(scene => {

@@ -160,6 +160,18 @@ h1 { font-family: "Instrument Serif", "Noto Serif KR", Batang, "Times New Roman"
 .features, .download { margin-top: clamp(68px, 10vw, 144px); scroll-margin-top: 26px; }
 .section-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
 h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.079em; word-break: keep-all; }
+.product-shot { margin: 0; min-width: 0; }
+.product-shot img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 16px; }
+.product-shot figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.windows-shot { margin-bottom: clamp(24px, 4vw, 44px); }
 .feature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .feature { display: grid; align-content: space-between; overflow: hidden; gap: 21px; border: 1px solid #24133114; border-radius: 20px; padding: clamp(19px, 3vw, 34px); }
 .feature h3 { font-size: clamp(20px, 2.7vw, 32px); letter-spacing: -.055em; line-height: 1.2; word-break: keep-all; }
@@ -205,35 +217,18 @@ h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.0
 .mobile-download:hover { background: #f2dbff; }
 .mobile-copy > .mobile-version:not(.platform) { margin: 9px 0 3px; font-size: 12px; }
 .mobile-stage {
-  position: relative;
-  isolation: isolate;
   display: grid;
   place-items: center;
-  min-height: 440px;
-  background: radial-gradient(ellipse at 58% 56%, #ad7aaf, #58416f 50%, #221932 78%);
+  padding: clamp(24px, 4vw, 54px);
+  background: radial-gradient(ellipse at 58% 56%, #754f80, #46325c 54%, #221932 82%);
 }
-.phone, .phone-shadow { width: min(62%, 228px); border-radius: 27px; }
-.phone-shadow { position: absolute; inset: auto auto 23px 50%; height: 55px; translate: -50%; background: #0c081ab0; filter: blur(22px); }
-.phone {
-  position: relative;
-  display: grid;
-  gap: 10px;
-  background: #15111c;
-  border: 1px solid #fbe4ff45;
-  padding: 15px 10px 9px;
-  box-shadow: 0 18px 55px #160d2b8c, inset 0 0 0 3px #ffffff15;
-  transform: rotate(7deg);
+.mobile-shot { width: min(100%, 270px); }
+.mobile-shot img {
+  border-color: #fbe4ff45;
+  border-radius: 23px;
+  box-shadow: 0 18px 55px #160d2b8c;
 }
-.phone-top { display: flex; align-items: center; gap: 6px; padding: 2px 6px; font-size: 13px; }
-.phone-scene { position: relative; isolation: isolate; overflow: hidden; border-radius: 13px; min-height: 188px; }
-.phone-scene img { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 66% center; }
-.phone-scene > div { position: absolute; inset: auto 0 0; display: grid; padding: 20px 12px 10px; background: linear-gradient(transparent, #120d23d9); }
-.phone-scene strong { font-size: 37px; line-height: 1.1; letter-spacing: -.08em; color: #d8bcff; }
-.phone-scene small { font-size: 10px; }
-.phone-dials, .phone-bar { display: flex; gap: 5px; align-items: center; }
-.phone-dials span { flex: 1; border-radius: 8px; text-align: center; padding: 6px 0; background: #302639; font-weight: 700; color: #e7d4ff; }
-.phone-bar span, .phone-bar b { border-radius: 8px; padding: 7px 6px; background: #302639; font-size: 9px; white-space: nowrap; }
-.phone-bar span { flex: 1; }
+.mobile-shot figcaption, .mobile-shot .small-link { color: #f5d7ff; }
 
 .download { margin-bottom: clamp(46px, 7vw, 95px); }
 .download-panel { display: grid; justify-items: center; text-align: center; gap: 12px; padding: clamp(34px, 7vw, 76px) 18px; border: 1px solid #4d3c5e; border-radius: 24px; background: radial-gradient(ellipse at top, #3b2b50, #211929 64%, #19151e); }
@@ -266,7 +261,6 @@ h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.0
   .feature-grid { grid-template-columns: 1fr; }
   .feature-search { grid-column: auto; grid-template-columns: 1fr; }
   .mobile-section { grid-template-columns: 1fr; }
-  .mobile-stage { min-height: 385px; }
   .maker { grid-template-columns: 1fr; }
 }
 
@@ -295,11 +289,6 @@ h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.0
     .hero-mark img { animation: mark-depart linear both; animation-timeline: scroll(root block); animation-range: 0px 580px; }
   }
   @supports (animation-timeline: view()) {
-    .phone {
-      animation: phone-settle linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 55%;
-    }
     .stage-orbits {
       animation: stage-settle linear both;
       animation-timeline: view();
@@ -314,10 +303,6 @@ h2 { font-size: clamp(37px, 5.7vw, 73px); line-height: 1.07; letter-spacing: -.0
 }
 @keyframes mark-depart {
   to { transform: translateY(-36px) rotate(-10deg) scale(.8); opacity: .25; }
-}
-@keyframes phone-settle {
-  from { transform: translateY(38px) rotate(13deg) scale(.93); }
-  to { transform: translateY(0) rotate(7deg) scale(1); }
 }
 @keyframes stage-settle {
   from { transform: translateY(35px) rotate(-19deg) scale(1.12); }
