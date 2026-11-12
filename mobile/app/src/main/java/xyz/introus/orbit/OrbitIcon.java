@@ -9,7 +9,7 @@ import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 
 final class OrbitIcon extends Drawable {
-    enum Kind { SEARCH, TABS, PLUS, MORE, BACK, FORWARD, RELOAD, CLOSE, STAR, SHARE, SETTINGS, GLOBE, LOCK, HOME }
+    enum Kind { SEARCH, TABS, PLUS, MORE, BACK, FORWARD, RELOAD, CLOSE, STAR, SHARE, SETTINGS, GLOBE, LOCK, HOME, FOLDER }
 
     private final Kind kind;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -97,6 +97,9 @@ final class OrbitIcon extends Drawable {
                 break;
             case HOME:
                 path(canvas, 4, 11, 12, 4, 20, 11, 18, 11, 18, 20, 6, 20, 6, 11, 4, 11);
+                break;
+            case FOLDER:
+                path(canvas, 3, 19, 3, 5, 9, 5, 11, 8, 21, 8, 21, 19, 3, 19);
                 break;
         }
         canvas.restore();

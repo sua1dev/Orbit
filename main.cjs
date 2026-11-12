@@ -13,6 +13,7 @@ const {fetchSuggestions}=require('./lib/search-suggestions.cjs');
 const { createSeoulWeatherService } = require('./lib/seoul-weather.cjs');
 const { fileTypes, launchDocumentPath, openLocalDocument } = require('./lib/local-document.cjs');
 const { chromeMenuItems, item: chromeMenuItem } = require('./lib/chrome-menu.cjs');
+const { cleanPanel, editPanel, findLink } = require('./lib/quick-links.cjs');
 
 const { parseBookmarkHTML, parseChromiumBookmarks } = require('./lib/bookmarks.cjs');
 const { resolveExtensionDirectory } = require('./lib/extension-path.cjs');
@@ -209,11 +210,15 @@ async function loginEvent(event, type, value) {
 
 function tabById(id) { return state.tabs.find(tab => tab.id === id); }
 function currentTab() { return tabById(state.activeTabId); }
+function liveTabContents(id) {
+  const contents = views.get(id)?.webContents;
+  return contents && !contents.isDestroyed() ? contents : null;
+}
 function rpcCandidates() {
   if (incognito || !win || win.isDestroyed() || !rpcExtensions.has(state.activeSpaceId)) return [];
   return state.tabs.filter(tab => tab.spaceId === state.activeSpaceId && isWebURL(tab.url)).flatMap(tab => {
-    const webContents = views.get(tab.id)?.webContents;
-    if (!webContents || webContents.isDestroyed() || (tab.id !== state.activeTabId && !webContents.isCurrentlyAudible())) return [];
+    const webContents = liveTabContents(tab.id);
+    if (!webContents || (tab.id !== state.activeTabId && !webContents.isCurrentlyAudible())) return [];
     return [{ id: tab.id, windowId: win.id, active: tab.id === state.activeTabId, windowFocused: win.isFocused(), url: tab.url, title: tab.title, faviconURL: tab.faviconURL, webContents }];
   });
 }
@@ -221,7 +226,12 @@ function snapshot() {
   const extensions = configureSession(state.activeSpaceId).extensions.getAllExtensions().map(extension => ({ id: extension.id, name: extension.name, version: extension.version }));
   const rpc = !incognito && rpcExtensions.get(state.activeSpaceId);
   if (rpc) extensions.push({ id: rpc.id, name: rpc.name, version: rpc.version, compatibility: rpc.compatibility, connection: rpcBridge?.getStatus() || { connected: false } });
-  return { ...state, history: incognito ? [] : state.history, tabs: state.tabs.map(entry => ({ ...publicTab(entry), muted: views.get(entry.id)?.webContents.isAudioMuted() || false })), webPanel: webPanel?.spaceId === state.activeSpaceId ? { ...webPanel.details } : null, incognito, windowCount: controllers.size, findResult, zoomFactor: views.get(state.activeTabId)?.webContents.getZoomFactor() || 1, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
+  const tabs = state.tabs.map(entry => ({
+    ...publicTab(entry),
+    muted: liveTabContents(entry.id)?.isAudioMuted() ?? false,
+  }));
+  const zoomFactor = liveTabContents(state.activeTabId)?.getZoomFactor() ?? 1;
+  return { ...state, history: incognito ? [] : state.history, tabs, webPanel: webPanel?.spaceId === state.activeSpaceId ? { ...webPanel.details } : null, incognito, windowCount: controllers.size, findResult, zoomFactor, extensions, extensionSupport: 'partial', downloads: downloads.map(({ ...item }) => item), notice,
     isMaximized: win?.isMaximized() || false, reducedMotion, packaged: app.isPackaged, version: app.getVersion(), engine: { electron: process.versions.electron, chromium: process.versions.chrome } };
 }
 function persist() {
@@ -267,10 +277,7 @@ function openChromeMenu(request) {
     command: (name, payload) => {
       if (name !== 'folder-editor' || state.folders.some(folder => folder.id === payload.id)) command(name, payload);
     },
-    contentsFor: id => {
-      const contents = views.get(id)?.webContents;
-      return contents && !contents.isDestroyed() ? contents : null;
-    },
+    contentsFor: liveTabContents,
     copyAddress: url => { clipboard.writeText(url);notify('주소를 복사했습니다.'); },
     incognito
   });
@@ -295,7 +302,8 @@ function layout() {
   const [width, height] = win.getContentSize();
   const ids = visibleIds();
   const place = (view, bounds) => {
-    if (view.webContents.isDestroyed()) return;
+    const contents = view.webContents;
+    if (!contents || contents.isDestroyed()) return;
     const size = bounds && { x: bounds.x, y: bounds.y,
       width: Math.min(bounds.width, width - bounds.x), height: Math.min(bounds.height, height - bounds.y) };
     const visible = Boolean(!overlayOpen && size && size.width > 0 && size.height > 0);
@@ -335,12 +343,11 @@ const PIP_SCRIPT = `(() => {
 async function enterPip(tab, manual = false) {
   if (pipPending || !tab || (!manual && !state.autoPip)) return { ok: false };
   if (!manual && !isYoutubeURL(tab.url) && !(TEST && isWebURL(tab.url) && new URL(tab.url).hostname === '127.0.0.1')) return { ok: false };
-  const view = views.get(tab.id);
-  if (!view || view.webContents.isDestroyed()) return { ok: false };
-  if (view.webContents.isLoadingMainFrame()) return { ok: false };
+  const contents = liveTabContents(tab.id);
+  if (!contents || contents.isLoadingMainFrame()) return { ok: false };
   pipPending = true;
   try {
-    const result = await withDeadline(view.webContents.executeJavaScript(PIP_SCRIPT.replace('__ORBIT_DEADLINE__', String(Date.now() + 1400)), true));
+    const result = await withDeadline(contents.executeJavaScript(PIP_SCRIPT.replace('__ORBIT_DEADLINE__', String(Date.now() + 1400)), true));
     if (result?.ok) { pipTabId = tab.id; if (manual) notify('영상이 다른 앱 위에 표시됩니다.'); }
     else if (manual) notify(result?.message || '이 페이지에서는 PIP를 사용할 수 없어요.');
     return result;
@@ -349,9 +356,9 @@ async function enterPip(tab, manual = false) {
 }
 async function restorePipIfVisible() {
   if (!pipTabId || !visibleIds().includes(pipTabId)) return;
-  const view = views.get(pipTabId);
+  const contents = liveTabContents(pipTabId);
   pipTabId = null;
-  if (view && !view.webContents.isDestroyed() && !view.webContents.isLoadingMainFrame()) await withDeadline(view.webContents.executeJavaScript('document.pictureInPictureElement ? document.exitPictureInPicture().then(() => true) : false')).catch(() => {});
+  if (contents && !contents.isLoadingMainFrame()) await withDeadline(contents.executeJavaScript('document.pictureInPictureElement ? document.exitPictureInPicture().then(() => true) : false')).catch(() => {});
 }
 
 // Chromium retains document-focus and frame policy enforcement.
@@ -571,7 +578,7 @@ function updateNavigation(tab, wc) {
 function ensureView(tab, shouldLoad = true, popupOptions = {}) {
   if (isInternal(tab.url)) return null;
   if (views.has(tab.id)) {
-    if (!views.get(tab.id).webContents.isDestroyed()) return views.get(tab.id);
+    if (liveTabContents(tab.id)) return views.get(tab.id);
     views.delete(tab.id);
   }
   const view = new WebContentsView({ ...(popupOptions.webContents ? { webContents: popupOptions.webContents } : {}),
@@ -661,7 +668,9 @@ function ensureView(tab, shouldLoad = true, popupOptions = {}) {
     findResult = { matches: result.matches, activeMatchOrdinal: result.activeMatchOrdinal };
     publish(false);
   });
-  wc.on('audio-state-changed', () => { tab.muted = wc.isAudioMuted();publish(false); });
+  wc.on('audio-state-changed', () => {
+    if (liveTabContents(tab.id) === wc) publish(false);
+  });
   wc.on('did-start-loading', () => { tab.loading = true; tab.error = null; publish(false); layout(); });
   wc.on('did-stop-loading', () => {
     tab.loading = false;
@@ -691,18 +700,19 @@ function ensureView(tab, shouldLoad = true, popupOptions = {}) {
 function closeView(id) {
   const view = views.get(id);
   if (!view) return;
+  const contents = liveTabContents(id);
   views.delete(id);
-  try { win?.contentView.removeChildView(view); if (!view.webContents.isDestroyed()) view.webContents.close(); } catch {}
+  try { win?.contentView.removeChildView(view); if (contents && !contents.isDestroyed()) contents.close(); } catch {}
 }
 function requestCloseView(id, retain = false) {
-  const view = views.get(id);
-  if (!view || view.webContents.isDestroyed()) return Promise.resolve(true);
+  const contents = liveTabContents(id);
+  if (!contents) return Promise.resolve(true);
   if (closeRequests.has(id)) return closeRequests.get(id).promise;
   if (retain) retainedTabs.add(id);
   let resolve;
   const promise = new Promise(done => { resolve = done; });
   closeRequests.set(id, { promise, resolve });
-  try { view.webContents.close({ waitForBeforeUnload: true }); }
+  try { contents.close({ waitForBeforeUnload: true }); }
   catch { closeRequests.delete(id);retainedTabs.delete(id);resolve(false); }
   return promise;
 }
@@ -737,7 +747,7 @@ async function activateTab(tab) {
   }
   state.activeTabId = tab.id; state.activeSpaceId = tab.spaceId;
   ensureView(tab); layout(); publish();
-  if (!overlayOpen) views.get(tab.id)?.webContents.focus();
+  if (!overlayOpen) liveTabContents(tab.id)?.focus();
 }
 async function fetchFavicon(wc, spaceId, pageURL, url, isCurrent) {
   const inline = decodeInlineFavicon(url);
@@ -812,12 +822,12 @@ function blankWindowState(privateMode, source = state) {
   next.tabs = next.spaces.map(space => ({ id: randomUUID(), spaceId: space.id, title: '새 탭', url: HOME, pinned: false }));
   next.activeTabId = next.tabs.find(entry => entry.spaceId === next.activeSpaceId).id;
   next.splitTabIds = [];
-  if (privateMode) { next.archivedTabs = [];next.history=[]; }
+  if (privateMode) { next.archivedTabs = [];next.history=[];next.quickLinks={}; }
   return sanitizeState(next);
 }
 function syncShared(key) {
   for (const other of controllers) {
-    if (other === controller || (key === 'history' && other.incognito)) continue;
+    if (other === controller || (['history', 'quickLinks'].includes(key) && other.incognito)) continue;
     other.state[key] = JSON.parse(JSON.stringify(state[key]));
     if (key === 'appearance') other.layout();
     other.publish();
@@ -913,7 +923,7 @@ function handleAction(name, payload = {}) {
 async function performAction(name, payload = {}) {
   if (quitting) return snapshot();
   if (typeof name !== 'string' || !payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('Invalid action');
-  const tab = currentTab(), wc = views.get(tab?.id)?.webContents;
+  const tab = currentTab(), wc = liveTabContents(tab?.id);
   switch (name) {
     case 'searchPreferences': {
       if(incognito)break;
@@ -1052,6 +1062,20 @@ async function performAction(name, payload = {}) {
       target.faviconURL ||= safeRasterFaviconURL(favorite.faviconURL);
       await activateTab(target);break;
     }
+    case 'quickLinks': {
+      if (incognito || payload.space !== state.activeSpaceId) throw new Error('현재 일반 스페이스에서 바로가기를 편집해 주세요.');
+      state.quickLinks[payload.space] = editPanel(state.quickLinks[payload.space], payload);
+      syncShared('quickLinks');
+      break;
+    }
+    case 'openQuickLink': {
+      if (incognito || payload.space !== state.activeSpaceId) break;
+      const link = findLink(cleanPanel(state.quickLinks[payload.space]), payload.id);
+      if (!link) break;
+      const existing = state.tabs.find(entry => entry.spaceId === state.activeSpaceId && entry.url === link.url);
+      await activateTab(existing || makeTab(link.url));
+      break;
+    }
     case 'archiveTab': {
       const target = tabById(payload.id || state.activeTabId);if (target && await requestCloseView(target.id)) removeTab(target.id, target.openerId);break;
     }
@@ -1118,8 +1142,10 @@ async function performAction(name, payload = {}) {
     }
     case 'devTools': if (wc) wc.isDevToolsOpened() ? wc.closeDevTools() : wc.openDevTools({ mode: 'detach' });break;
     case 'copyURL': { const target = tabById(payload.id || state.activeTabId);if (target && isWebURL(target.url)) { clipboard.writeText(target.url);notify('주소를 복사했습니다.'); }break; }
-    case 'muteTab': { const target = tabById(payload.id || state.activeTabId), targetWC = views.get(target?.id)?.webContents;
-      if (targetWC) { targetWC.setAudioMuted(!targetWC.isAudioMuted());target.muted = targetWC.isAudioMuted(); }break;
+    case 'muteTab': {
+      const contents = liveTabContents(payload.id || state.activeTabId);
+      if (contents) contents.setAudioMuted(!contents.isAudioMuted());
+      break;
     }
     case 'importBookmarks': await importBookmarks();break;
     case 'loadExtension': await loadExtension();break;
@@ -1187,7 +1213,7 @@ async function performAction(name, payload = {}) {
       if (isInternal(tab.url) || !wc) { tab.url = url; tab.title = url === HOME ? '새 탭' : new URL(url).hostname; tab.error = null; ensureView(tab); }
       else if (isInternal(url)) { if (!await requestCloseView(tab.id, true)) break; Object.assign(tab, { url, title: url===HOME?'새 탭':new URL(url).hostname, faviconURL:null, error: null, loading: false, canGoBack: false, canGoForward: false }); }
       else { if (webOrigin(tab.url) !== webOrigin(url)) tab.faviconURL = null;tab.url = url; tab.error = null; wc.loadURL(url).catch(() => {}); }
-      if (!overlayOpen && url !== HOME) views.get(tab.id)?.webContents.focus();
+      if (!overlayOpen && url !== HOME) liveTabContents(tab.id)?.focus();
       break;
     }
     case 'back': if (wc?.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); break;
@@ -1221,7 +1247,7 @@ async function performAction(name, payload = {}) {
       if (state.activeSpaceId === space.id) { state.activeSpaceId = state.spaces[0].id; state.activeTabId = state.tabs.find(t => t.spaceId === state.activeSpaceId).id; state.splitTabIds = []; ensureView(currentTab()); }
       state.folders = state.folders.filter(folder => folder.spaceId !== space.id);
       state.archivedTabs = state.archivedTabs.filter(entry => entry.spaceId !== space.id);
-      if(!incognito){state.history=state.history.filter(entry=>entry.spaceId!==space.id);syncShared('history');}
+      if(!incognito){state.history=state.history.filter(entry=>entry.spaceId!==space.id);syncShared('history');delete state.quickLinks[space.id];syncShared('quickLinks');}
       if (!incognito && rpcExtensions.delete(space.id)) {
         saveRpcExtensions();
         if (rpcExtensions.size) rpcBridge?.tick(); else await rpcBridge?.stop();

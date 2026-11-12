@@ -224,7 +224,7 @@ function renderTabs(){
   }
   reconcile($('pinnedTabs'),pinned,t=>t.id,t=>make(t,true),update,true);
   reconcile($('tabList'),regular,t=>t.id,t=>make(t,false),update,true);
-  renderFavorites();renderFolders(tabs,make,update);
+  renderQuickLinks();renderFavorites();renderFolders(tabs,make,update);
 }
 
 function renderSpaces(){

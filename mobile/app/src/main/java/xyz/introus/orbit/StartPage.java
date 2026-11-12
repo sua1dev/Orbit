@@ -26,13 +26,6 @@ final class StartPage {
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm", Locale.KOREAN);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("M월 d일 EEEE", Locale.KOREAN);
-    private static final String[][] SHORTCUTS = {
-        {"Google", "https://www.google.com/", "google"},
-        {"네이버", "https://www.naver.com/", "naver"},
-        {"YouTube", "https://www.youtube.com/", "youtube"},
-        {"Discord", "https://discord.com/app", "discord"},
-    };
-
     private final BrowserChrome chrome;
     private final BrowserActivity activity;
     private ImageView wallpaper;
@@ -102,31 +95,8 @@ final class StartPage {
         heroSize.topMargin = chrome.dp(12);
         inner.addView(hero(), heroSize);
 
-        LinearLayout shortcuts = chrome.row();
-        String dialSize = activity.preferences.getString("dialSize", "medium");
-        int dialHeight = dialSize.equals("small") ? 56 : dialSize.equals("large") ? 76 : 66;
-        for (String[] entry : SHORTCUTS) {
-            LinearLayout tile = chrome.column();
-            tile.setGravity(Gravity.CENTER);
-            tile.setBackground(chrome.actionSurface(chrome.card, 16));
-            tile.setContentDescription(entry[0] + " 열기");
-            tile.setOnClickListener(view -> activity.open(entry[1], false));
-            ImageView icon = new ImageView(activity);
-            icon.setImageBitmap(chrome.image("sites/" + entry[2] + ".png"));
-            icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-            tile.addView(icon, new LinearLayout.LayoutParams(chrome.dp(23), chrome.dp(23)));
-            TextView caption = chrome.oneLine(entry[0], 11, chrome.ink, true);
-            caption.setGravity(Gravity.CENTER);
-            chrome.addTop(tile, caption, 4);
-            LinearLayout.LayoutParams size = new LinearLayout.LayoutParams(0, chrome.dp(dialHeight), 1);
-            if (shortcuts.getChildCount() != 0) size.setMarginStart(chrome.dp(7));
-            shortcuts.addView(tile, size);
-        }
-        TextView shortcutsTitle = chrome.text("바로가기", 15, chrome.ink, true);
-        shortcutsTitle.setAccessibilityHeading(true);
         if (activity.preferences.getBoolean("showShortcuts", true) && !activity.privateMode()) {
-            chrome.addTop(inner, shortcutsTitle, 18);
-            chrome.addTop(inner, shortcuts, 7);
+            chrome.addTop(inner, new QuickLinksPanel(chrome, null).view(), 16);
         }
 
         if (!activity.store.bookmarks.isEmpty()) {

@@ -1,10 +1,14 @@
-# Orbit Browser 1.4.7 · Windows
+# Orbit Browser 1.4.8 · Windows
 
 Chromium을 내장한 Electron 기반 Windows 브라우저입니다. 세로 탭, 독립 스페이스, 분할 화면, 자동 Picture-in-Picture를 지원합니다.
 
 [Orbit 소개 및 다운로드](https://orbit.intro-us.xyz/)
 
 Android용 Orbit Mobile 개발 빌드는 [mobile](mobile/)에서 확인할 수 있습니다. [Arc에서 참고한 개선 제안](docs/arc-orbit-proposals.md)과 [Windows 기능의 Android 지원 현황](mobile/WINDOWS-PARITY.md)도 읽을 수 있습니다.
+
+## 1.4.8 변경 사항
+
+- 세로 사이드바에 스페이스별 바로가기 패널을 추가했습니다. 빈 아이콘 칸을 눌러 사이트를 추가하고, 아래에 이름이 보이는 링크나 접을 수 있는 폴더를 만들 수 있습니다. 기존 항목은 **편집** 또는 우클릭으로 수정합니다.
 
 ## 1.4.7 변경 사항
 
@@ -62,7 +66,7 @@ Android용 Orbit Mobile 개발 빌드는 [mobile](mobile/)에서 확인할 수 �
 
 ## 설치와 실행
 
-Inno Setup으로 만든 Windows x64 설치 파일인 `Orbit-Setup-1.4.7-x64.exe`를 실행합니다. Node.js나 관리자 권한은 필요하지 않습니다. 기존 Orbit을 닫고 설치하면 같은 Windows 계정의 기본 프로필을 이어서 사용합니다.
+Inno Setup으로 만든 Windows x64 설치 파일인 `Orbit-Setup-1.4.8-x64.exe`를 실행합니다. Node.js나 관리자 권한은 필요하지 않습니다. 기존 Orbit을 닫고 설치하면 같은 Windows 계정의 기본 프로필을 이어서 사용합니다.
 
 설치 화면의 **바탕화면 아이콘 만들기**는 기본으로 선택되어 있으며 필요 없으면 해제할 수 있습니다. 기존에 바탕화면 바로가기가 없었던 경우에도 수동 업그레이드 중 이 항목을 선택하면 새로 만듭니다. 시작 메뉴 바로가기는 바탕화면 선택 여부와 관계없이 계속 생성합니다.
 

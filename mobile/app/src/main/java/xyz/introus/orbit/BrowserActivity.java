@@ -479,6 +479,7 @@ public class BrowserActivity extends ComponentActivity {
         store.history.removeIf(page -> page.space.equals(space.id));
         store.searches.removeIf(entry -> entry.space.equals(space.id));
         store.groups.removeIf(group -> group.space.equals(space.id));
+        store.shortcutPanels.remove(space.id);
         store.spaces.remove(space);
         if (!store.tabs.contains(store.active)) {
             store.active = null;

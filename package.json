@@ -1,7 +1,7 @@
 {
   "name": "orbit-browser",
   "productName": "Orbit",
-  "version": "1.4.7",
+  "version": "1.4.8",
   "description": "A Chromium-powered browser with spaces, vertical tabs and automatic picture in picture.",
   "main": "main.cjs",
   "private": true,

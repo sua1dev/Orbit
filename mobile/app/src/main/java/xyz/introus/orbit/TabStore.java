@@ -79,6 +79,7 @@ final class TabStore {
     final List<Space> spaces = new ArrayList<>();
     final List<Group> groups = new ArrayList<>();
     final List<Search> searches = new ArrayList<>();
+    final java.util.Map<String, QuickLinks> shortcutPanels = new java.util.LinkedHashMap<>();
     private final SharedPreferences preferences;
     Tab active, splitFirst, splitSecond;
     float splitRatio = .5f;
@@ -115,6 +116,11 @@ final class TabStore {
                     opaque(value.optInt("color", 0xff8a79d8)));
             group.collapsed = value.optBoolean("collapsed");
             groups.add(group);
+        }
+        JSONObject shortcuts = state.optJSONObject("quickLinks");
+        if (shortcuts != null) for (Space space : spaces) {
+            JSONObject panel = shortcuts.optJSONObject(space.id);
+            if (panel != null) shortcutPanels.put(space.id, QuickLinks.read(panel));
         }
         JSONArray open = state.optJSONArray("open");
         if (open != null) {
@@ -168,6 +174,8 @@ final class TabStore {
     }
 
     Space activeSpace() { return space(active.space); }
+
+    QuickLinks quickLinks() { return shortcutPanels.computeIfAbsent(active.space, ignored -> QuickLinks.initial()); }
 
     List<Tab> currentTabs() {
         List<Tab> list = new ArrayList<>();
@@ -290,11 +298,16 @@ final class TabStore {
                     .put("name", group.name).put("color", group.color).put("collapsed", group.collapsed));
             JSONArray searchList = new JSONArray();
             for (Search entry : searches) searchList.put(new JSONObject().put("text", entry.text).put("space", entry.space));
+            JSONObject shortcuts = new JSONObject();
+            for (Space space : spaces) {
+                QuickLinks panel = shortcutPanels.get(space.id);
+                if (panel != null) shortcuts.put(space.id, panel.json());
+            }
             JSONObject state = new JSONObject().put("open", open).put("active", tabs.indexOf(active))
                     .put("splitFirst", tabs.indexOf(splitFirst)).put("splitSecond", tabs.indexOf(splitSecond))
                     .put("splitRatio", splitRatio).put("spaces", spaceList).put("groups", groupList)
                     .put("closed", writePages(closed)).put("bookmarks", writePages(bookmarks))
-                    .put("history", writePages(history)).put("searches", searchList);
+                    .put("history", writePages(history)).put("searches", searchList).put("quickLinks", shortcuts);
             preferences.edit().putString("tabs", state.toString()).apply();
         } catch (JSONException impossible) {
             throw new AssertionError(impossible);

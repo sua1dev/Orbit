@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const relative = name => new URL(name, import.meta.url);
 const assets = relative('./dist/assets/');
+const siteIcons = new URL('sites/', assets);
 const { version } = JSON.parse(await readFile(relative('../package.json'), 'utf8'));
 const mobileGradle = await readFile(relative('../mobile/app/build.gradle'), 'utf8');
 const mobileVersion = /^\s*versionName '([\w.-]+)'\s*$/m.exec(mobileGradle)?.[1];
@@ -9,6 +10,7 @@ if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid Orbi
 if (!mobileVersion) throw new Error('Missing Android version');
 
 await mkdir(assets, { recursive: true });
+await mkdir(siteIcons, { recursive: true });
 const html = await readFile(relative('./public/index.html'), 'utf8');
 await Promise.all([
   writeFile(relative('./dist/index.html'), html.replaceAll('__ORBIT_VERSION__', version)
@@ -16,6 +18,8 @@ await Promise.all([
   ...['style.css', 'preview.js', '_headers'].map(file =>
     copyFile(relative('./public/' + file), relative('./dist/' + file))),
   copyFile(relative('../renderer/brand/orbit-mark.svg'), new URL('orbit.svg', assets)),
+  ...['google', 'youtube', 'naver', 'github', 'discord'].map(name =>
+    copyFile(relative('../renderer/sites/' + name + '.png'), new URL(name + '.png', siteIcons))),
   ...['yuwol-lavender.png', 'yuwol-crescent.png'].map(file =>
     copyFile(relative('../renderer/brand/' + file), new URL(file, assets))),
   ...['day', 'night', 'rain', 'snow'].map(scene => {

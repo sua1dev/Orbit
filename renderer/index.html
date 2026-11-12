@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="tab-strip.css">
   <link rel="stylesheet" href="panes.css">
   <link rel="stylesheet" href="tab-search.css">
+  <link rel="stylesheet" href="quick-links.css">
 </head>
 <body>
   <div id="app" class="app">
@@ -21,7 +22,13 @@
       <div class="brand-row drag"><button class="brand no-drag" id="homeButton" aria-label="Orbit 메뉴" aria-haspopup="dialog"><span class="orbit-mark"></span><span class="brand-name">orbit</span><span class="brand-menu-chevron" data-icon="chevronDown"></span></button></div>
       <button class="space-selector" id="spaceSelector" aria-haspopup="dialog"><span class="space-glyph" id="spaceGlyph">O</span><span class="space-label"><span id="spaceName">시작의 궤도</span><small>스페이스 전환</small></span><span class="space-chevron" data-icon="chevrons"></span></button>
       <button class="new-tab-button" id="newTabButton"><span data-icon="plus"></span><span>새 탭</span><kbd>Ctrl T</kbd></button>
-      <div class="sidebar-scroll"><section class="favorites-section" id="favoritesSection" hidden><div class="section-label"><span>즐겨찾기</span><span data-icon="star"></span></div><div class="favorites-grid" id="favoritesGrid"></div></section><section class="pinned-section" id="pinnedSection"><div class="section-label"><span>고정 탭</span><span data-icon="pin"></span></div><div class="pinned-grid" id="pinnedTabs"></div></section><div class="folder-list" id="folderList"></div><section class="tabs-section"><div class="section-label"><span>열린 탭</span><span class="tab-count" id="tabCount">0</span></div><div id="tabList" class="tab-list"></div></section></div>
+      <div class="sidebar-scroll">
+        <section class="quick-links" id="quickLinks" aria-label="바로가기" hidden></section>
+        <section class="favorites-section" id="favoritesSection" hidden><div class="section-label"><span>즐겨찾기</span><span data-icon="star"></span></div><div class="favorites-grid" id="favoritesGrid"></div></section>
+        <section class="pinned-section" id="pinnedSection"><div class="section-label"><span>고정 탭</span><span data-icon="pin"></span></div><div class="pinned-grid" id="pinnedTabs"></div></section>
+        <div class="folder-list" id="folderList"></div>
+        <section class="tabs-section"><div class="section-label"><span>열린 탭</span><span class="tab-count" id="tabCount">0</span></div><div id="tabList" class="tab-list"></div></section>
+      </div>
       <div class="sidebar-bottom"><div class="space-dots" id="spaceDots" aria-label="스페이스 전환"></div><button class="icon-button add-space" id="addSpaceButton" aria-label="스페이스 추가" title="스페이스 추가" data-icon="plus"></button></div>
       <div class="utility-row"><button class="utility-button" id="settingsButton" aria-label="설정" title="설정"><span data-icon="settings"></span><span>설정</span></button><button class="utility-button download-utility" id="downloadsButton" aria-label="다운로드" title="다운로드"><span class="download-icon" data-icon="download"></span><span>다운로드</span><span class="download-badge" id="downloadBadge" hidden></span></button></div>
       <div id="sidebarResize" class="sidebar-resize" role="separator" aria-label="세로 탭 너비 조절" aria-orientation="vertical" aria-valuemin="200" aria-valuemax="360" aria-valuenow="256" tabindex="0"></div>
@@ -91,6 +98,7 @@
   <script src="panes.js"></script>
   <script src="tab-strip.js"></script>
   <script src="tab-search.js"></script>
+  <script src="quick-links.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

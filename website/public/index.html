@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Orbit은 스페이스, 탭 그룹, 분할 화면과 서울의 시작 페이지를 갖춘 개인 제작 브라우저입니다. Windows와 Android에서 만나보세요.">
-  <meta name="theme-color" content="#f8f4ee">
+  <meta name="theme-color" content="#101012">
   <meta property="og:title" content="Orbit 브라우저">
   <meta property="og:description" content="탭을 정리하고, 내 방식대로 둘러보는 Windows·Android 브라우저.">
   <meta property="og:image" content="https://orbit.intro-us.xyz/assets/seoul-night.jpg">
@@ -19,9 +19,9 @@
   <header class="site-header shell">
     <a class="wordmark" href="/" aria-label="Orbit 홈"><img src="/assets/orbit.svg" alt="" width="34" height="34">Orbit</a>
     <nav aria-label="페이지 메뉴">
-      <a href="#features">기능</a>
+      <a href="#shortcuts">바로가기</a>
       <a href="#mobile">Android</a>
-      <a href="#download">다운로드</a>
+      <a class="nav-download" href="#download">다운로드</a>
       <a href="https://github.com/sua1dev/Orbit">GitHub ↗</a>
     </nav>
   </header>
@@ -29,16 +29,46 @@
   <main id="main">
     <section class="hero shell" aria-labelledby="hero-title">
       <div class="hero-copy">
-        <p class="platform">Windows용 Chromium 브라우저</p>
-        <h1 id="hero-title">내 방식대로<br><em>브라우징.</em></h1>
-        <div class="hero-intro">
-          <p>일과 일상을 스페이스로 나누고, 필요한 탭을 빠르게 찾으세요. 탭의 위치부터 새 탭의 배경까지 원하는 대로 꾸밀 수 있어요.</p>
-          <a class="primary" href="https://github.com/sua1dev/Orbit/releases/download/v__ORBIT_VERSION__/Orbit-Setup-__ORBIT_VERSION__-x64.exe">Windows용 다운로드 <span aria-hidden="true">↓</span></a>
-          <a class="small-link" href="#download">Orbit __ORBIT_VERSION__ · x64 · 설치 안내</a>
+        <div class="hero-mark"><img src="/assets/orbit.svg" alt="" width="220" height="220"></div>
+        <h1 id="hero-title">나만의 궤도를 찾다.</h1>
+        <p>자주 쓰는 사이트, 지금 하는 일, 서울의 새 탭.<br>Orbit으로 내 방식대로 탐색하세요.</p>
+        <a class="hero-link" href="#shortcuts">Orbit 둘러보기 <span aria-hidden="true">↓</span></a>
+      </div>
+    </section>
+
+    <section class="shortcut-section shell" id="shortcuts" aria-labelledby="shortcut-title">
+      <div class="editorial-copy" data-reveal>
+        <p class="platform">바로가기</p>
+        <h2 id="shortcut-title">매일 여는 곳을<br>한곳에.</h2>
+        <p>위쪽 여섯 칸에 자주 쓰는 사이트를 놓고, 아래에는 이름이 보이는 링크와 접을 수 있는 폴더를 추가하세요.</p>
+        <p class="section-note">Windows 사이드바 · Android 시작 화면과 탭 화면</p>
+      </div>
+      <div class="shortcut-stage" data-reveal>
+        <div class="shortcut-demo">
+          <div class="shortcut-demo-header"><img src="/assets/orbit.svg" alt="" width="27" height="27"><strong>바로가기</strong><span>미리보기</span></div>
+          <div class="shortcut-demo-grid" aria-label="여섯 칸에 배치한 사이트 예시">
+            <div><img src="/assets/sites/google.png" alt="Google" width="24" height="24"></div>
+            <div><img src="/assets/sites/youtube.png" alt="YouTube" width="24" height="24"></div>
+            <div><img src="/assets/sites/naver.png" alt="네이버" width="24" height="24"></div>
+            <div><img src="/assets/sites/github.png" alt="GitHub" width="24" height="24"></div>
+            <div><img src="/assets/sites/discord.png" alt="Discord" width="24" height="24"></div>
+            <div class="shortcut-empty" aria-label="비어 있는 슬롯">＋</div>
+          </div>
+          <div class="shortcut-demo-row"><span aria-hidden="true">↗</span> 서울 산책 지도</div>
+          <details class="shortcut-demo-folder" open>
+            <summary><span aria-hidden="true">▰</span> 주말 여행</summary>
+            <div>남산 산책로</div><div>가보고 싶은 카페</div>
+          </details>
         </div>
       </div>
+    </section>
 
-      <figure class="demo" id="preview">
+    <section class="preview-section shell" aria-labelledby="preview-title">
+      <div class="section-intro" data-reveal>
+        <h2 id="preview-title">서울이 열리는<br>새 탭.</h2>
+        <p>서울의 시각과 날씨에 맞춰 남산 배경이 바뀝니다. 아래에서 낮·밤·비·눈을 직접 고를 수 있어요.</p>
+      </div>
+      <figure class="demo" id="preview" data-reveal>
         <div class="demo-stage">
           <div class="stage-orbits" aria-hidden="true"></div>
           <div class="browser-demo" role="img" aria-label="Orbit 새 탭 화면 미리보기. 왼쪽 세로 탭과 남산 배경, 가운데 시계와 검색창이 보입니다.">

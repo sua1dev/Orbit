@@ -614,6 +614,7 @@ final class BrowserChrome {
         library.removeAllViews();
         if (!query.isEmpty()) return;
         TabStore store = activity.store;
+        if (!activity.privateMode()) addTop(library, new QuickLinksPanel(this, this::showTabs).view(), 0);
         if (!store.bookmarks.isEmpty()) {
             addTop(library, text("즐겨찾기", 14, muted, true), 3);
             LinearLayout line = null;
@@ -665,7 +666,7 @@ final class BrowserChrome {
         addTop(library, option(Kind.PLUS, "새 탭 그룹", () -> showGroupEditor(null, null)), 3);
     }
 
-    private ImageView favicon(String url) {
+    ImageView favicon(String url) {
         String host = WebAddress.displayHost(url);
         String known = host.equals("google.com") ? "google" : host.equals("youtube.com") ? "youtube" :
                 host.equals("discord.com") ? "discord" : host.equals("naver.com") ? "naver" : host.equals("github.com") ? "github" : null;
